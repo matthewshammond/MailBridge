@@ -167,7 +167,7 @@ volumes:
 Before implementing the form, you need to set up CAPTCHA protection. Both options are free for personal and small business use:
 
 1. **reCAPTCHA (by Google) - Recommended**:
-   - Free for up to 1 million assessments per month
+   - Free for up to 10,000 assessments per month
    - Invisible to users (better user experience)
    - Better spam detection
    - Go to https://www.google.com/recaptcha/admin
