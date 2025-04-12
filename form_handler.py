@@ -99,9 +99,13 @@ for email in instance_emails:
     response_configs[email] = response_config
 
 # Configure CORS
+allowed_origins = []
+for form_name, form_data in config["forms"].items():
+    allowed_origins.extend(form_data.get("allowed_domains", []))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for now
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -137,6 +141,26 @@ async def submit_form(
     captcha_token: Optional[str] = Form(None),
     redis_client: redis.Redis = Depends(lambda: redis_client)
 ):
+    # Validate form key and get form config
+    form_config = None
+    for form_name, form_data in config["forms"].items():
+        if form_data.get("key") == form_key:
+            form_config = form_data
+            break
+
+    if not form_config:
+        raise HTTPException(status_code=404, detail="Form not found")
+
+    # Validate origin
+    origin = request.headers.get("origin")
+    if not origin:
+        raise HTTPException(status_code=403, detail="Origin header required")
+    
+    # Check if origin is in allowed domains
+    origin_domain = origin.replace("https://", "").replace("http://", "")
+    if not any(domain in origin_domain for domain in form_config.get("allowed_domains", [])):
+        raise HTTPException(status_code=403, detail="Origin not allowed")
+
     # If form data is provided, use it; otherwise try to parse JSON
     if name and email and subject and content:
         submission = FormSubmission(
@@ -153,16 +177,6 @@ async def submit_form(
         except:
             raise HTTPException(status_code=422, detail="Invalid request format")
 
-    # Validate form key
-    form_config = None
-    for form_name, form_data in config["forms"].items():
-        if form_data.get("key") == form_key:
-            form_config = form_data
-            break
-
-    if not form_config:
-        raise HTTPException(status_code=404, detail="Form not found")
-
     # Check rate limit
     ip = request.client.host
     key = f"rate_limit:{ip}:{form_key}"
@@ -172,13 +186,11 @@ async def submit_form(
     await redis_client.incr(key)
     await redis_client.expire(key, 60)  # Reset after 1 minute
 
-    # Send email
-    try:
-        await send_form_submission_email(form_config, submission)
-        return {"status": "success", "message": "Form submitted successfully"}
-    except Exception as e:
-        logger.error("Error sending email: %s", str(e))
-        raise HTTPException(status_code=500, detail="Failed to send email")
+    # Start email sending in background
+    asyncio.create_task(send_form_submission_email(form_config, submission))
+    
+    # Return success response immediately
+    return {"status": "success", "message": "Form submitted successfully"}
 
 async def send_form_submission_email(form_config: Dict[str, Any], submission: FormSubmission):
     # Get email configuration
