@@ -19,6 +19,8 @@ import redis.asyncio as redis
 from functools import lru_cache
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
+import imaplib
+import time
 
 # Load environment variables
 load_dotenv()
@@ -181,55 +183,79 @@ async def submit_form(
     # Start email sending in background
     asyncio.create_task(send_form_submission_email(form_config, submission))
     
-    # Create response
-    response_data = {"status": "success", "message": "Form submitted successfully"}
-    response = Response(
-        content=json.dumps(response_data),
-        media_type="application/json",
-        status_code=200
-    )
-    
-    # Log response
-    logger.info("📤 Sending response: %s", response_data)
-    
-    return response
+    # Return success response immediately
+    return {"status": "success", "message": "Form submitted successfully"}
+
+def save_to_sent_folder(msg: MIMEMultipart, smtp_user: str, smtp_password: str):
+    """Save a copy of the email to the Sent Messages folder."""
+    try:
+        logger.info("🔐 Attempting to connect to IMAP server to save to Sent folder")
+        with imaplib.IMAP4_SSL("imap.mail.me.com", 993) as imap:
+            logger.info("🔑 Logging in to IMAP server")
+            imap.login(smtp_user, smtp_password)
+            logger.info("📤 Appending message to Sent Messages folder")
+            imap.append(
+                '"Sent Messages"',  # iCloud's sent folder name
+                "",  # Flags
+                imaplib.Time2Internaldate(time.time()),  # Date
+                msg.as_bytes()  # Message
+            )
+            logger.info("✅ Successfully saved email to Sent Messages folder")
+    except Exception as e:
+        logger.error("❌ Failed to save email to Sent Messages folder: %s", str(e))
+        logger.error("❌ Error details: %s", str(e.__class__.__name__))
+        if hasattr(e, 'args'):
+            logger.error("❌ Error args: %s", str(e.args))
 
 async def send_form_submission_email(form_config: Dict[str, Any], submission: FormSubmission):
-    # Get email configuration
-    email_config = responses.get(form_config["to_email"][0])  # Get first email from to_email list
-    if not email_config:
-        raise ValueError(f"No email configuration found for {form_config['to_email'][0]}")
+    """Send form submission email using iCloud SMTP."""
+    try:
+        # Get email configuration
+        email_config = responses.get(form_config["to_email"][0])  # Get first email from to_email list
+        if not email_config:
+            raise ValueError(f"No email configuration found for {form_config['to_email'][0]}")
 
-    # Create message
-    msg = MIMEMultipart()
-    msg["From"] = form_config["to_email"][0]  # Use the form's to_email as the From address
-    msg["To"] = form_config["to_email"][0]  # Use first email from to_email list
-    msg["Subject"] = email_config["form_submission_template"]["subject"] % submission.subject
+        # Create message
+        msg = MIMEMultipart()
+        msg["From"] = f"{form_config['from_name']} <{form_config['to_email'][0]}>"  # Use the form's to_email as the From address
+        msg["To"] = form_config["to_email"][0]  # Use first email from to_email list
+        msg["Subject"] = email_config["form_submission_template"]["subject"] % submission.subject
 
-    # Add body
-    body = email_config["form_submission_template"]["body"] % (
-        submission.name,
-        submission.email,
-        submission.subject,
-        submission.content
-    )
-    msg.attach(MIMEText(body, "html"))
+        # Add body
+        body = email_config["form_submission_template"]["body"] % (
+            submission.name,
+            submission.email,
+            submission.subject,
+            submission.content
+        )
+        msg.attach(MIMEText(body, "html"))
 
-    # Send email using iCloud SMTP
-    smtp_user = os.getenv("ICLOUD_EMAIL")
-    smtp_password = os.getenv("ICLOUD_PASSWORD")
+        # Send email using iCloud SMTP
+        smtp_user = os.getenv("ICLOUD_EMAIL")
+        smtp_password = os.getenv("ICLOUD_PASSWORD")
 
-    if not smtp_user or not smtp_password:
-        raise ValueError("Missing iCloud email or password")
+        if not smtp_user or not smtp_password:
+            raise ValueError("Missing iCloud email or password")
 
-    async with aiosmtplib.SMTP(
-        hostname="smtp.mail.me.com",
-        port=587,
-        use_tls=False,  # Don't use TLS initially
-        start_tls=True  # Use STARTTLS instead
-    ) as smtp:
-        await smtp.login(smtp_user, smtp_password)
-        await smtp.send_message(msg)
+        async with aiosmtplib.SMTP(
+            hostname="smtp.mail.me.com",
+            port=587,
+            use_tls=False,  # Don't use TLS initially
+            start_tls=True  # Use STARTTLS instead
+        ) as smtp:
+            await smtp.login(smtp_user, smtp_password)
+            await smtp.send_message(msg)
+            logger.info("📨 Email sent successfully via SMTP")
+            
+            # Save copy to Sent Messages folder in a separate thread
+            await asyncio.to_thread(save_to_sent_folder, msg, smtp_user, smtp_password)
+            
+    except Exception as e:
+        logger.error("❌ Failed to send email: %s", str(e))
+        logger.error("❌ Error details: %s", str(e.__class__.__name__))
+        if hasattr(e, 'args'):
+            logger.error("❌ Error args: %s", str(e.args))
+        raise
 
 async def process_email(email_data: Dict[str, Any], responses: Dict[str, Any]) -> None:
     """Process a single email and send appropriate response."""
@@ -282,6 +308,43 @@ async def process_email(email_data: Dict[str, Any], responses: Dict[str, Any]) -
 
     except Exception as e:
         logger.error("❌ Error processing email: %s", str(e))
+        raise
+
+async def send_response_email(to_email: str, to_name: str, subject: str, body: str):
+    """Send response email using iCloud SMTP."""
+    try:
+        # Create message
+        msg = MIMEMultipart()
+        msg["From"] = f"Matt Hammond <{os.getenv('ICLOUD_EMAIL')}>"
+        msg["To"] = to_email
+        msg["Subject"] = subject
+        msg.attach(MIMEText(body, "html"))
+
+        # Send email using iCloud SMTP
+        smtp_user = os.getenv("ICLOUD_EMAIL")
+        smtp_password = os.getenv("ICLOUD_PASSWORD")
+
+        if not smtp_user or not smtp_password:
+            raise ValueError("Missing iCloud email or password")
+
+        async with aiosmtplib.SMTP(
+            hostname="smtp.mail.me.com",
+            port=587,
+            use_tls=False,  # Don't use TLS initially
+            start_tls=True  # Use STARTTLS instead
+        ) as smtp:
+            await smtp.login(smtp_user, smtp_password)
+            await smtp.send_message(msg)
+            logger.info("📨 Response email sent successfully via SMTP")
+            
+            # Save copy to Sent Messages folder
+            await asyncio.to_thread(save_to_sent_folder, msg, smtp_user, smtp_password)
+            
+    except Exception as e:
+        logger.error("❌ Failed to send response email: %s", str(e))
+        logger.error("❌ Error details: %s", str(e.__class__.__name__))
+        if hasattr(e, 'args'):
+            logger.error("❌ Error args: %s", str(e.args))
         raise
 
 if __name__ == "__main__":

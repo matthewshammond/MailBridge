@@ -55,6 +55,24 @@ def extract_fields(body):
     print(f"📝 Extracted fields: {fields}", flush=True)
     return fields
 
+def save_to_sent_folder(msg: EmailMessage):
+    """Save a copy of the email to the Sent Messages folder."""
+    try:
+        print("🔐 Attempting to connect to IMAP server to save to Sent folder", flush=True)
+        with imaplib.IMAP4_SSL(IMAP_SERVER, IMAP_PORT) as imap:
+            print("🔑 Logging in to IMAP server", flush=True)
+            imap.login(EMAIL_LOGIN, EMAIL_PASSWORD)
+            print("📤 Appending message to Sent Messages folder", flush=True)
+            imap.append(
+                '"Sent Messages"',  # iCloud's sent folder name
+                "",  # Flags
+                imaplib.Time2Internaldate(time.time()),  # Date
+                msg.as_bytes()  # Message
+            )
+            print("✅ Successfully saved email to Sent Messages folder", flush=True)
+    except Exception as e:
+        print(f"❌ Failed to save email to Sent Messages folder: {e}", flush=True)
+
 def send_reply(to_email, subject_line_from_body, name, response_body, signature, from_email):
     print(f"📤 Attempting to send reply to {to_email}", flush=True)
     msg = EmailMessage()
@@ -66,17 +84,28 @@ def send_reply(to_email, subject_line_from_body, name, response_body, signature,
     msg.set_content(html_body, subtype="html")
 
     try:
+        print(f"🔐 Connecting to SMTP server {SMTP_SERVER}:{SMTP_PORT}", flush=True)
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            print(f"🔐 Connecting to SMTP server {SMTP_SERVER}:{SMTP_PORT}", flush=True)
+            print("🔒 Starting TLS", flush=True)
             server.starttls()  # STARTTLS for SMTP
             print("🔑 Logging in to SMTP server", flush=True)
             server.login(EMAIL_LOGIN, EMAIL_PASSWORD)
             print("📨 Sending message", flush=True)
             server.send_message(msg)
             print(f"✔ Sent reply to {to_email}", flush=True)
+            
+            # Save copy to Sent Messages folder
+            try:
+                save_to_sent_folder(msg)
+            except Exception as e:
+                print(f"❌ Failed to save to Sent folder: {e}", flush=True)
+            
             return True
     except Exception as e:
         print(f"❌ SMTP Error: {e}", flush=True)
+        print(f"❌ Error details: {e.__class__.__name__}", flush=True)
+        if hasattr(e, 'args'):
+            print(f"❌ Error args: {e.args}", flush=True)
         return False
 
 def process_new_emails():
