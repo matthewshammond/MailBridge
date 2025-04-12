@@ -22,6 +22,8 @@ services:
       - REDIS_URL=redis://redis:6379
     volumes:
       - ./config:/config
+    ports:
+      - "1234:1234"
     depends_on:
       - redis
     deploy:
@@ -45,6 +47,8 @@ services:
       - REDIS_URL=redis://redis:6379
     volumes:
       - ./config:/config
+    ports:
+      - "1235:1235"
     depends_on:
       - redis
     deploy:
