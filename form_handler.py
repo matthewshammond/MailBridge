@@ -18,6 +18,7 @@ import asyncio
 import redis.asyncio as redis
 from functools import lru_cache
 from dotenv import load_dotenv
+from contextlib import asynccontextmanager
 
 # Load environment variables
 load_dotenv()
@@ -26,7 +27,17 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    logger.info("✅ Loaded response config with %d email aliases", len(responses))
+    for email, config in responses.items():
+        logger.info("📋 %s has %d response templates", email, len(config.get("subjects", {})))
+    yield
+    # Shutdown
+    await redis_client.close()
+
+app = FastAPI(lifespan=lifespan)
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -112,12 +123,6 @@ class FormSubmission(BaseModel):
         if not self.content.strip() or len(self.content) > 10000:
             raise ValueError("Invalid content")
 
-@app.on_event("startup")
-async def startup_event():
-    logger.info("✅ Loaded response config with %d email aliases", len(responses))
-    for email, config in responses.items():
-        logger.info("📋 %s has %d response templates", email, len(config.get("subjects", {})))
-
 @app.post("/api/v1/form/{form_key}")
 @limiter.limit("5/minute")
 async def submit_form(
@@ -186,7 +191,7 @@ async def send_form_submission_email(form_config: Dict[str, Any], submission: Fo
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        app,
+        "form_handler:app",
         host="0.0.0.0",
         port=int(instance_port),
         workers=4  # Adjust based on CPU cores
