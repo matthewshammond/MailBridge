@@ -76,30 +76,32 @@ with open(responses_path, "r") as f:
 
 # Get instance-specific configuration
 instance_port = os.getenv("PORT", "1234")
-instance_email = os.getenv("INSTANCE_EMAIL")
+instance_emails = os.getenv("INSTANCE_EMAILS", "").split(",")  # Allow multiple emails
 
-if not instance_email:
-    raise ValueError("INSTANCE_EMAIL environment variable must be set")
+if not instance_emails:
+    raise ValueError("INSTANCE_EMAILS environment variable must be set")
 
-# Find the instance configuration
-instance_config = None
+# Find the instance configurations
+instance_configs = []
 for form_name, form_data in config["forms"].items():
-    if form_data["to_email"][0] == instance_email:
-        instance_config = form_data
-        break
+    if form_data["to_email"][0] in instance_emails:
+        instance_configs.append(form_data)
 
-if not instance_config:
-    raise ValueError(f"No configuration found for email {instance_email}")
+if not instance_configs:
+    raise ValueError(f"No configuration found for emails {instance_emails}")
 
-# Get the response configuration for this instance
-response_config = responses.get(instance_email)
-if not response_config:
-    raise ValueError(f"No response configuration found for email {instance_email}")
+# Get the response configurations for these instances
+response_configs = {}
+for email in instance_emails:
+    response_config = responses.get(email)
+    if not response_config:
+        raise ValueError(f"No response configuration found for email {email}")
+    response_configs[email] = response_config
 
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=instance_config.get("allowed_domains", []),
+    allow_origins=["*"],  # Allow all origins for now
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -152,14 +154,14 @@ async def submit_form(
             raise HTTPException(status_code=422, detail="Invalid request format")
 
     # Validate form key
-    form_config = next((f for f in config["forms"] if f["key"] == form_key), None)
+    form_config = None
+    for form_name, form_data in config["forms"].items():
+        if form_data.get("key") == form_key:
+            form_config = form_data
+            break
+
     if not form_config:
         raise HTTPException(status_code=404, detail="Form not found")
-
-    # Validate origin
-    origin = request.headers.get("origin", "")
-    if origin and origin not in form_config.get("allowed_domains", []):
-        raise HTTPException(status_code=403, detail="Origin not allowed")
 
     # Check rate limit
     ip = request.client.host
@@ -180,14 +182,14 @@ async def submit_form(
 
 async def send_form_submission_email(form_config: Dict[str, Any], submission: FormSubmission):
     # Get email configuration
-    email_config = responses.get(form_config["email"])
+    email_config = responses.get(form_config["to_email"][0])  # Get first email from to_email list
     if not email_config:
-        raise ValueError(f"No email configuration found for {form_config['email']}")
+        raise ValueError(f"No email configuration found for {form_config['to_email'][0]}")
 
     # Create message
     msg = MIMEMultipart()
-    msg["From"] = os.getenv("ICLOUD_EMAIL")
-    msg["To"] = form_config["email"]
+    msg["From"] = form_config["to_email"][0]  # Use the form's to_email as the From address
+    msg["To"] = form_config["to_email"][0]  # Use first email from to_email list
     msg["Subject"] = email_config["form_submission_template"]["subject"] % submission.subject
 
     # Add body
@@ -199,14 +201,74 @@ async def send_form_submission_email(form_config: Dict[str, Any], submission: Fo
     )
     msg.attach(MIMEText(body, "html"))
 
-    # Send email
+    # Send email using iCloud SMTP
+    smtp_user = os.getenv("ICLOUD_EMAIL")
+    smtp_password = os.getenv("ICLOUD_PASSWORD")
+
+    if not smtp_user or not smtp_password:
+        raise ValueError("Missing iCloud email or password")
+
     async with aiosmtplib.SMTP(
-        hostname=os.getenv("ICLOUD_SMTP_HOST"),
-        port=int(os.getenv("ICLOUD_SMTP_PORT")),
-        use_tls=True
+        hostname="smtp.mail.me.com",
+        port=587,
+        use_tls=False,  # Don't use TLS initially
+        start_tls=True  # Use STARTTLS instead
     ) as smtp:
-        await smtp.login(os.getenv("ICLOUD_EMAIL"), os.getenv("ICLOUD_APP_PASSWORD"))
+        await smtp.login(smtp_user, smtp_password)
         await smtp.send_message(msg)
+
+async def process_email(email_data: Dict[str, Any], responses: Dict[str, Any]) -> None:
+    """Process a single email and send appropriate response."""
+    try:
+        logger.info("🔍 Processing email:")
+        logger.info("   To: %s", email_data["to"])
+        logger.info("   Subject: %s", email_data["subject"])
+
+        # Get response configuration for this email
+        response_config = responses.get(email_data["to"])
+        if not response_config:
+            logger.warning("⚠️  No response configuration found for %s", email_data["to"])
+            return
+
+        # Check if we have a matching subject
+        matching_subject = None
+        for subject in response_config.get("subjects", {}).keys():
+            if email_data["subject"].startswith(subject):
+                matching_subject = subject
+                break
+
+        if not matching_subject:
+            logger.warning("⚠️  No matching response for subject: %s", email_data["subject"])
+            return
+
+        # Get the response template
+        response_template = response_config["subjects"][matching_subject]
+        logger.info("📝 Using response template: %s", matching_subject)
+
+        # Extract the original subject from the email subject
+        original_subject = email_data["subject"].replace(matching_subject, "").strip()
+
+        # Format the response
+        response_body = response_template["body"] % (
+            email_data["from_name"],
+            email_data["from_email"],
+            original_subject,
+            email_data["content"]
+        )
+        response_subject = response_template["subject"] % original_subject
+
+        # Send the response
+        await send_response_email(
+            to_email=email_data["from_email"],
+            to_name=email_data["from_name"],
+            subject=response_subject,
+            body=response_body
+        )
+        logger.info("✅ Response sent successfully")
+
+    except Exception as e:
+        logger.error("❌ Error processing email: %s", str(e))
+        raise
 
 if __name__ == "__main__":
     import uvicorn

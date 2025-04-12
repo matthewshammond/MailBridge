@@ -36,6 +36,7 @@ A modern, secure, and efficient form submission and email response system built 
 - CORS support
 - Gzip compression
 - CAPTCHA support (optional)
+- Multiple email alias support
 
 ## Setup
 
@@ -57,8 +58,8 @@ ICLOUD_SMTP_HOST=smtp.mail.me.com
 ICLOUD_SMTP_PORT=587
 
 # Instance configuration
-INSTANCE_EMAIL=contact@matthammond.com
-PORT=1234
+INSTANCE_EMAILS=info@example.com,contact@website.com
+PORT=2525
 ```
 
 ### Configuration Files
@@ -69,8 +70,16 @@ PORT=1234
 forms:
   contact_form:
     key: "your-form-key"
-    to_email: ["contact@matthammond.com"]
-    allowed_domains: ["https://matthammond.com"]
+    to_email: ["contact@example.com"]
+    allowed_domains: ["https://example.com"]
+    from_name: "Your Name"
+    rate_limit: 5  # requests per minute
+
+  another_form:
+    key: "another-form-key"
+    to_email: ["info@example.com"]
+    allowed_domains: ["https://example.com"]
+    from_name: "Your Name"
     rate_limit: 5  # requests per minute
 ```
 
@@ -78,7 +87,7 @@ forms:
 
 ```json
 {
-  "contact@matthammond.com": {
+  "contact@example.com": {
     "subjects": {
       "general": "Re: %s",
       "support": "Re: Support Request - %s",
@@ -92,7 +101,8 @@ forms:
       "general": "<p>Thank you for your message...</p>",
       "support": "<p>Thank you for contacting support...</p>",
       "feedback": "<p>Thank you for your feedback...</p>"
-    }
+    },
+    "signature": "<p>Your signature HTML here</p>"
   }
 }
 ```
@@ -101,21 +111,42 @@ forms:
 
 ```yaml
 services:
-  form_handler:
-    build: .
-    ports:
-      - "1234:1234"
-    volumes:
-      - ./config:/config
-    env_file:
-      - .env
-    depends_on:
-      - redis
-
   redis:
-    image: redis:alpine
+    image: redis:7-alpine
+    container_name: mailbridge-redis
+    restart: unless-stopped
     volumes:
       - redis_data:/data
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+
+  mailbridge:
+    build: .
+    container_name: mailbridge
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - PORT=2525
+      - INSTANCE_EMAILS=info@example.com,contact@website.com
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ./config:/config
+    ports:
+      - "2525:2525"
+    depends_on:
+      - redis
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+        window: 120s
 
 volumes:
   redis_data:
@@ -186,7 +217,7 @@ $(document).ready(function() {
     $("#contact").submit(function(e) {
         e.preventDefault();
         $.ajax({
-            url: "https://your-mailbridge-server:1234/api/v1/form/your-form-key",
+            url: "https://your-mailbridge-server:2525/api/v1/form/your-form-key",
             method: "POST",
             data: $(this).serialize(),
             dataType: "json",
@@ -230,16 +261,17 @@ $(document).ready(function() {
 input, textarea {
     width: 100%;
     padding: 0.5rem;
-    border: 1px solid #ccc;
+    border: 1px solid #ddd;
     border-radius: 4px;
 }
 textarea {
-    min-height: 150px;
+    height: 150px;
+    resize: vertical;
 }
 button {
-    padding: 0.5rem 1rem;
     background: #007bff;
     color: white;
+    padding: 0.5rem 1rem;
     border: none;
     border-radius: 4px;
     cursor: pointer;
@@ -248,35 +280,19 @@ button {
     position: fixed;
     top: 0;
     left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0,0,0,0.5);
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
     display: none;
     justify-content: center;
     align-items: center;
 }
-.overlay div {
+.overlay > div {
     background: white;
     padding: 2rem;
     border-radius: 4px;
-    text-align: center;
-}
-.alert {
-    padding: 1rem;
-    margin: 1rem 0;
-    border-radius: 4px;
-}
-.alert--loading {
-    background: #fff3cd;
-    color: #856404;
-}
-.alert--success {
-    background: #d4edda;
-    color: #155724;
-}
-.alert--error {
-    background: #f8d7da;
-    color: #721c24;
+    max-width: 400px;
+    width: 100%;
 }
 </style>
 
@@ -286,7 +302,7 @@ $(document).ready(function() {
     $contactForm.submit(function(e) {
         e.preventDefault();
         $.ajax({
-            url: "https://your-mailbridge-server:1234/api/v1/form/your-form-key",
+            url: "https://your-mailbridge-server:2525/api/v1/form/your-form-key",
             method: "POST",
             data: $(this).serialize(),
             dataType: "json",
@@ -466,7 +482,7 @@ $(document).ready(function() {
         // Get reCAPTCHA token
         grecaptcha.execute('your-site-key', {action: 'submit'}).then(function(token) {
             $.ajax({
-                url: "http://your-mailbridge-server:1234/api/v1/form/your-form-key",
+                url: "http://your-mailbridge-server:2525/api/v1/form/your-form-key",
                 method: "POST",
                 data: {
                     name: $contactForm.find('[name="name"]').val(),
@@ -529,7 +545,7 @@ $(document).ready(function() {
         }
         
         $.ajax({
-            url: "http://your-mailbridge-server:1234/api/v1/form/your-form-key",
+            url: "http://your-mailbridge-server:2525/api/v1/form/your-form-key",
             method: "POST",
             data: {
                 name: $contactForm.find('[name="name"]').val(),
@@ -566,7 +582,6 @@ $(document).ready(function() {
                     '<i class="fa fa-warning"></i> &nbsp; ' + errorMessage + '</div>'
                 );
                 $contactForm.find(".overlay").fadeIn();
-                hcaptcha.reset(); // Reset CAPTCHA
             }
         });
     });
@@ -580,31 +595,24 @@ $(document).ready(function() {
 
 ### Running Services
 
-Start the services:
-
+1. Build and start the services:
 ```bash
+docker compose build
 docker compose up -d
 ```
 
-Check logs:
-
+2. Check the logs:
 ```bash
 docker compose logs -f
 ```
 
-Stop services:
-
-```bash
-docker compose down
-```
-
 ### Testing
 
-1. Submit a test form
-2. Check Redis connection:
-```bash
-docker compose exec redis redis-cli ping
-```
+1. Submit a test form to verify the submission process
+2. Check your email to confirm receipt of the form submission
+3. Verify that the automated response is sent correctly
+4. Test rate limiting by submitting multiple forms quickly
+5. Test CAPTCHA functionality if enabled
 
 ## License
 

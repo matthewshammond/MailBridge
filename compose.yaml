@@ -11,44 +11,19 @@ services:
           cpus: '0.25'
           memory: 256M
 
-  mailbridge-example:
+  mailbridge:
     build: .
-    container_name: mailbridge-example
+    container_name: mailbridge
     restart: unless-stopped
     env_file: .env
     environment:
-      - PORT=1234
-      - INSTANCE_EMAIL=info@example.com
+      - PORT=2525
+      - INSTANCE_EMAILS=info@example.com,contact@website.com
       - REDIS_URL=redis://redis:6379
     volumes:
       - ./config:/config
     ports:
-      - "1234:1234"
-    depends_on:
-      - redis
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-      restart_policy:
-        condition: on-failure
-        max_attempts: 3
-        window: 120s
-
-  mailbridge-exmaple2:
-    build: .
-    container_name: mailbridge-example2
-    restart: unless-stopped
-    env_file: .env
-    environment:
-      - PORT=1235
-      - INSTANCE_EMAIL=contact@website.com
-      - REDIS_URL=redis://redis:6379
-    volumes:
-      - ./config:/config
-    ports:
-      - "1235:1235"
+      - "2525:2525"
     depends_on:
       - redis
     deploy:

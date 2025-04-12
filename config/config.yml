@@ -7,7 +7,7 @@ global:
         disable_tls: false
 
 forms:
-    example-contact:
+    example-feature:
         key: example-contact-key
         allowed_domains:
             - example.com
@@ -17,8 +17,18 @@ forms:
             - info@example.com
         from_name: Example Team
 
-    example2-contact:
+    example-access:
         key: example2-contact-key
+        allowed_domains:
+            - example.com
+            - www.example.com
+            - site.example.com
+        to_email:
+            - info@example.com
+        from_name: Example Team
+
+    example-contact:
+        key: example3-contact-key
         allowed_domains:
             - website.com
             - www.website.com

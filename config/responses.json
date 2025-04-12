@@ -1,7 +1,7 @@
 {
   "contact@website.com": {
     "subjects": {
-      "Contact Request": "Thank you for reaching out! I'll review your message and get back to you as soon as possible."
+      "New Submission with subject:": "Thank you for reaching out! I'll review your message and get back to you as soon as possible."
     },
     "signature": "<p><strong>First Last</strong><br>contact@website.com<br><a href='https://website.com'>website.com</a></p>",
     "form_submission_template": {

@@ -30,10 +30,18 @@ with open(RESPONSE_MAP_PATH, "r") as f:
 
 def extract_fields(body):
     print(f"📧 Raw email body:\n{body}", flush=True)
-    # Updated regex to handle HTML formatting
+    # Updated regex to match the HTML format we're sending
     name_match = re.search(r"<b>Name:</b>\s*(.+?)</p>", body)
     email_match = re.search(r"<b>Email:</b>\s*(.+?)</p>", body)
     subject_match = re.search(r"<b>Subject:</b>\s*(.+?)</p>", body)
+    
+    if not name_match or not email_match or not subject_match:
+        print("⚠️  Failed to extract fields from email body", flush=True)
+        return {
+            "name": None,
+            "email": None,
+            "subject": None
+        }
     
     # Extract first name only
     full_name = name_match.group(1).strip()
@@ -41,8 +49,8 @@ def extract_fields(body):
     
     fields = {
         "name": first_name,
-        "email": email_match.group(1).strip() if email_match else None,
-        "subject": subject_match.group(1).strip() if subject_match else None
+        "email": email_match.group(1).strip(),
+        "subject": subject_match.group(1).strip()
     }
     print(f"📝 Extracted fields: {fields}", flush=True)
     return fields
@@ -73,6 +81,12 @@ def send_reply(to_email, subject_line_from_body, name, response_body, signature,
 
 def process_new_emails():
     try:
+        # Get the instance emails from environment
+        instance_emails = os.getenv("INSTANCE_EMAILS", "").split(",")
+        if not instance_emails:
+            print("❌ INSTANCE_EMAILS environment variable not set", flush=True)
+            return
+
         # IMAP with SSL
         mail = imaplib.IMAP4_SSL(IMAP_SERVER, IMAP_PORT)
         print(f"🔐 Connecting to IMAP server {IMAP_SERVER}:{IMAP_PORT}", flush=True)
@@ -107,6 +121,11 @@ def process_new_emails():
             print(f"   To: {header_to}", flush=True)
             print(f"   Subject: {header_subject}", flush=True)
 
+            # Only process emails that match any of our instance emails
+            if not any(email.lower() in header_to.lower() for email in instance_emails):
+                print(f"⚠️  Skipping email not for any instance ({instance_emails})", flush=True)
+                continue
+
             # Find which alias this email is for
             matching_alias = None
             for alias in RESPONSE_CONFIG:
@@ -120,18 +139,35 @@ def process_new_emails():
 
             print(f"📋 Checking against available responses for {matching_alias}: {list(RESPONSE_CONFIG[matching_alias]['subjects'].keys())}", flush=True)
 
-            if header_subject not in RESPONSE_CONFIG[matching_alias]['subjects']:
+            # Check if subject starts with any of the configured subjects
+            matching_subject = None
+            for subject in RESPONSE_CONFIG[matching_alias]['subjects'].keys():
+                if header_subject.startswith(subject):
+                    matching_subject = subject
+                    break
+
+            if not matching_subject:
                 print(f"⚠️  No matching response for subject: {header_subject}", flush=True)
                 continue
 
+            # Try to get both HTML and plain text versions
             body = ""
             if msg.is_multipart():
                 for part in msg.walk():
-                    if part.get_content_type() == "text/plain":
+                    content_type = part.get_content_type()
+                    if content_type == "text/plain":
                         body = part.get_payload(decode=True).decode()
                         break
+                    elif content_type == "text/html":
+                        body = part.get_payload(decode=True).decode()
             else:
                 body = msg.get_payload(decode=True).decode()
+
+            # If we got HTML, try to extract plain text
+            if "<html" in body.lower():
+                # Remove HTML tags and convert to plain text
+                body = re.sub(r'<[^>]+>', '', body)
+                body = re.sub(r'\n\s*\n', '\n\n', body)  # Normalize newlines
 
             fields = extract_fields(body)
             if fields["email"] and fields["subject"]:
@@ -139,7 +175,7 @@ def process_new_emails():
                     fields["email"],
                     fields["subject"],
                     fields["name"],
-                    RESPONSE_CONFIG[matching_alias]['subjects'][header_subject],
+                    RESPONSE_CONFIG[matching_alias]['subjects'][matching_subject],
                     RESPONSE_CONFIG[matching_alias]['signature'],
                     matching_alias
                 ):
