@@ -1,198 +1,127 @@
 # MailBridge
 
-A Python-based form submission handler and automated email response system that works with multiple websites and email addresses.
+A modern, secure, and efficient form submission and email response system built with FastAPI and Docker.
 
 ## Table of Contents
 
 - [Features](#features)
-- [Setup Instructions](#setup-instructions)
-  - [Environment Variables](#1-environment-variables)
-  - [Configuration Files](#2-configuration-files)
-  - [Website Integration](#3-website-integration)
-    - [CAPTCHA Setup](#captcha-setup)
-    - [Complete Form Implementation](#complete-form-implementation-with-captcha)
-  - [Running the Services](#4-running-the-services)
-  - [Testing](#5-testing)
-- [Running with Docker](#running-with-docker)
-- [Using the Form Handler](#using-the-form-handler)
-- [Form Submission Requirements](#form-submission-requirements)
-- [Response Format](#response-format)
-- [Error Handling](#error-handling)
-- [Development](#development)
-- [Security Considerations](#security-considerations)
+- [Setup](#setup)
   - [Environment Variables](#environment-variables)
-  - [Form Submission Security](#form-submission-security)
-  - [Email Security](#email-security)
-  - [Docker Security](#docker-security)
-- [Performance Tuning](#performance-tuning)
-  - [Form Handler](#form-handler)
-  - [iCloud Mail Daemon](#icloud-mail-daemon)
-  - [Docker Configuration](#docker-configuration)
-  - [Monitoring](#monitoring)
+  - [Configuration Files](#configuration-files)
+    - [config.yml](#configyml)
+    - [responses.json](#responsesjson)
+    - [compose.yaml](#composeyaml)
+  - [Website Integration](#website-integration)
+    - [CAPTCHA Setup](#captcha-setup)
+      - [reCAPTCHA](#recaptcha)
+      - [hCaptcha](#hcaptcha)
+    - [Form Implementations](#form-implementations)
+      - [Basic Form](#basic-form-implementation)
+      - [Simple jQuery](#simple-jquery-implementation)
+      - [Complete Form (without CAPTCHA)](#complete-form-implementation-without-captcha)
+      - [Complete Form (with CAPTCHA)](#complete-form-implementation-with-captcha)
+  - [Running Services](#running-services)
+  - [Testing](#testing)
 - [License](#license)
 
 ## Features
 
-- Handle form submissions from multiple websites
-- Send form submissions to different email addresses
-- Automated email responses using templates
-- CORS protection for form submissions
-- Docker-based deployment
-- iCloud email integration
+- FastAPI backend with async support
+- Docker containerization
+- Redis for rate limiting and caching
+- iCloud SMTP integration
+- Automated email responses
+- Form submission handling
+- Rate limiting
+- CORS support
+- Gzip compression
+- CAPTCHA support (optional)
 
-## Setup Instructions
+## Setup
 
-### 1. Environment Variables
+### Environment Variables
 
-Copy `.env.sample` to `.env` and update it with your iCloud credentials:
+Copy `.env.sample` to `.env` and update with your iCloud credentials:
 
 ```bash
 cp .env.sample .env
 ```
 
-Update the `.env` file with your iCloud credentials:
+Update the `.env` file with your iCloud SMTP settings:
+
 ```env
 # iCloud SMTP settings
 ICLOUD_EMAIL=your_icloud_email@icloud.com
 ICLOUD_APP_PASSWORD=your_app_specific_password
+ICLOUD_SMTP_HOST=smtp.mail.me.com
+ICLOUD_SMTP_PORT=587
+
+# Instance configuration
+INSTANCE_EMAIL=contact@matthammond.com
+PORT=1234
 ```
 
-### 2. Configuration Files
+### Configuration Files
 
-#### config.yml
-
-Update the `config/config.yml` file with your form configurations:
+1. **config.yml** - Form and domain configuration:
 
 ```yaml
-global:
-    smtp:
-        host: smtp.mail.me.com  # iCloud SMTP server
-        port: 587
-        user: ${ICLOUD_EMAIL}
-        password: ${ICLOUD_APP_PASSWORD}
-        disable_tls: false
-
 forms:
-    # Example for personal website
-    personal-contact:
-        key: your-unique-key-here  # Generate a secure random key
-        allowed_domains:
-            - yourdomain.com
-            - www.yourdomain.com
-        to_email:
-            - your-email@yourdomain.com
-        from_name: Your Name
-
-    # Example for business website
-    business-contact:
-        key: another-unique-key-here
-        allowed_domains:
-            - business.com
-            - www.business.com
-        to_email:
-            - contact@business.com
-        from_name: Business Team
+  contact_form:
+    key: "your-form-key"
+    to_email: ["contact@matthammond.com"]
+    allowed_domains: ["https://matthammond.com"]
+    rate_limit: 5  # requests per minute
 ```
 
-#### responses.json
-
-Update the `config/responses.json` file with your email templates and automated responses:
+2. **responses.json** - Email templates and responses:
 
 ```json
 {
-  "your-email@yourdomain.com": {
+  "contact@matthammond.com": {
     "subjects": {
-      "Contact Request": "Thank you for reaching out! I'll review your message and get back to you as soon as possible."
+      "general": "Re: %s",
+      "support": "Re: Support Request - %s",
+      "feedback": "Re: Feedback - %s"
     },
-    "signature": "<p><strong>Your Name</strong><br>your-email@yourdomain.com<br><a href='https://yourdomain.com'>yourdomain.com</a></p>",
     "form_submission_template": {
       "subject": "New Submission with subject: %s",
-      "body": "<p>Your Name,</p><p>Someone has just submitted a new form on your website.</p><p>Thank you,<br>YourDomain.com</p><p><br></p><p><b>Name:</b> %s</p><p><b>Email:</b> %s</p><p><b>Subject:</b> %s</p><p><b>Content:</b><br><br>%s</p>"
-    }
-  },
-  "contact@business.com": {
-    "subjects": {
-      "Business: Access Request": "Thank you for requesting access! I'll review your message and reach out promptly if I have any questions.",
-      "Business: General Inquiry": "Thank you for reaching out! I'll review your message and get back to you promptly with more information."
+      "body": "<p>Name: %s<br>Email: %s<br>Subject: %s<br><br>%s</p>"
     },
-    "signature": "<p><strong>Business Team</strong><br>contact@business.com<br><a href='https://business.com'>business.com</a></p>",
-    "form_submission_template": {
-      "subject": "Business: %s",
-      "body": "<p>Team,</p><p>Someone has just submitted a new form on the website.</p><p>Thank you,<br>Business Team</p><p><br></p><p><b>Name:</b> %s</p><p><b>Email:</b> %s</p><p><b>Subject:</b> %s</p><p><b>Content:</b><br><br>%s</p>"
+    "response_templates": {
+      "general": "<p>Thank you for your message...</p>",
+      "support": "<p>Thank you for contacting support...</p>",
+      "feedback": "<p>Thank you for your feedback...</p>"
     }
   }
 }
 ```
 
-#### compose.yaml
-
-Update the `compose.yaml` file with your service configurations:
+3. **compose.yaml** - Docker services configuration:
 
 ```yaml
 services:
+  form_handler:
+    build: .
+    ports:
+      - "1234:1234"
+    volumes:
+      - ./config:/config
+    env_file:
+      - .env
+    depends_on:
+      - redis
+
   redis:
-    image: redis:7-alpine
-    container_name: mailbridge-redis
-    restart: unless-stopped
+    image: redis:alpine
     volumes:
       - redis_data:/data
-    deploy:
-      resources:
-        limits:
-          cpus: '0.25'
-          memory: 256M
-
-  mailbridge-personal:
-    build: .
-    container_name: mailbridge-personal
-    restart: unless-stopped
-    env_file: .env
-    environment:
-      - PORT=1234
-      - INSTANCE_EMAIL=your-email@yourdomain.com
-      - REDIS_URL=redis://redis:6379
-    volumes:
-      - ./config:/config
-    depends_on:
-      - redis
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-      restart_policy:
-        condition: on-failure
-        max_attempts: 3
-        window: 120s
-
-  mailbridge-business:
-    build: .
-    container_name: mailbridge-business
-    restart: unless-stopped
-    env_file: .env
-    environment:
-      - PORT=1235
-      - INSTANCE_EMAIL=contact@business.com
-      - REDIS_URL=redis://redis:6379
-    volumes:
-      - ./config:/config
-    depends_on:
-      - redis
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-      restart_policy:
-        condition: on-failure
-        max_attempts: 3
-        window: 120s
 
 volumes:
   redis_data:
 ```
 
-### 3. Website Integration
+### Website Integration
 
 #### CAPTCHA Setup
 
@@ -234,7 +163,162 @@ forms:
             secret_key: "your-secret-key-here"
 ```
 
-#### Complete Form Implementation (with CAPTCHA)
+#### Form Implementations
+
+##### Basic Form Implementation
+
+Add this HTML to your website:
+
+```html
+<form id="contact" method="post">
+    <input type="text" name="name" required placeholder="Your Name">
+    <input type="email" name="email" required placeholder="Your Email">
+    <input type="text" name="subject" required placeholder="Subject">
+    <textarea name="content" required placeholder="Your Message"></textarea>
+    <button type="submit">Send Message</button>
+</form>
+```
+
+##### Simple jQuery Implementation
+
+```javascript
+$(document).ready(function() {
+    $("#contact").submit(function(e) {
+        e.preventDefault();
+        $.ajax({
+            url: "https://your-mailbridge-server:1234/api/v1/form/your-form-key",
+            method: "POST",
+            data: $(this).serialize(),
+            dataType: "json",
+            success: function(data) {
+                alert("Message sent successfully!");
+            },
+            error: function(err) {
+                alert("Error sending message");
+            }
+        });
+    });
+});
+```
+
+##### Complete Form Implementation (without CAPTCHA)
+
+```html
+<form id="contact" method="post">
+    <div class="form-group">
+        <input type="text" name="name" required placeholder="Your Name">
+    </div>
+    <div class="form-group">
+        <input type="email" name="email" required placeholder="Your Email">
+    </div>
+    <div class="form-group">
+        <input type="text" name="subject" required placeholder="Subject">
+    </div>
+    <div class="form-group">
+        <textarea name="content" required placeholder="Your Message"></textarea>
+    </div>
+    <button type="submit">Send Message</button>
+    <div class="overlay">
+        <div></div>
+    </div>
+</form>
+
+<style>
+.form-group {
+    margin-bottom: 1rem;
+}
+input, textarea {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+textarea {
+    min-height: 150px;
+}
+button {
+    padding: 0.5rem 1rem;
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    display: none;
+    justify-content: center;
+    align-items: center;
+}
+.overlay div {
+    background: white;
+    padding: 2rem;
+    border-radius: 4px;
+    text-align: center;
+}
+.alert {
+    padding: 1rem;
+    margin: 1rem 0;
+    border-radius: 4px;
+}
+.alert--loading {
+    background: #fff3cd;
+    color: #856404;
+}
+.alert--success {
+    background: #d4edda;
+    color: #155724;
+}
+.alert--error {
+    background: #f8d7da;
+    color: #721c24;
+}
+</style>
+
+<script>
+$(document).ready(function() {
+    var $contactForm = $("#contact");
+    $contactForm.submit(function(e) {
+        e.preventDefault();
+        $.ajax({
+            url: "https://your-mailbridge-server:1234/api/v1/form/your-form-key",
+            method: "POST",
+            data: $(this).serialize(),
+            dataType: "json",
+            beforeSend: function() {
+                $contactForm.find(".overlay div")
+                    .html('<div class="alert alert--loading"><i class="fa fa-circle-o-notch fa-spin"></i> Sending message...</div>');
+                $contactForm.find(".overlay").fadeIn();
+            },
+            success: function(data) {
+                $contactForm.find(".alert--loading").hide();
+                $contactForm.find(".overlay div")
+                    .html('<div class="alert alert--success"><i class="fa fa-check"></i> Message sent successfully!</div>');
+                $contactForm.find(".overlay").fadeIn();
+                setTimeout(function() {
+                    window.location.href = "https://your-website.com/thank-you";
+                }, 3000);
+            },
+            error: function(err) {
+                $contactForm.find(".alert--loading").hide();
+                $contactForm.find(".overlay div")
+                    .html('<div class="alert alert--error"><i class="fa fa-warning"></i> Error sending message</div>');
+                $contactForm.find(".overlay").fadeIn();
+            }
+        });
+    });
+    $contactForm.find(".overlay").click(function(e) {
+        $(this).fadeOut();
+    });
+});
+</script>
+
+##### Complete Form Implementation (with CAPTCHA)
 
 1. Add this to your website's HTML:
 ```html
@@ -494,193 +578,39 @@ $(document).ready(function() {
 });
 ```
 
-### 4. Running the Services
+### Running Services
 
-1. Start all services:
+Start the services:
+
 ```bash
 docker compose up -d
 ```
 
-2. Check the logs:
+Check logs:
+
 ```bash
 docker compose logs -f
 ```
 
-3. Stop all services:
+Stop services:
+
 ```bash
 docker compose down
 ```
 
-### 5. Testing
+### Testing
 
-1. Test form submission:
-```bash
-curl -X POST http://localhost:1234/api/v1/form/your-form-key \
-  -H "Content-Type: application/json" \
-  -H "Origin: http://yourdomain.com" \
-  -d '{
-    "name": "Test User",
-    "email": "test@example.com",
-    "subject": "Test Subject",
-    "content": "This is a test message"
-  }'
-```
-
+1. Submit a test form
 2. Check Redis connection:
 ```bash
-docker exec -it mailbridge-redis redis-cli ping
+docker compose exec redis redis-cli ping
 ```
-
-## Running with Docker
-
-The system uses Docker Compose to run multiple instances, one for each form/email address:
-
-```bash
-docker compose up -d
-```
-
-This will start:
-- `mailbridge-example` on port 1234 for info@example.com
-- `mailbridge-example2` on port 1235 for contact@website.com
-
-## Using the Form Handler
-
-To submit a form, send a POST request to the appropriate endpoint:
-
-```javascript
-fetch('http://your-server:1234/api/v1/form/example-contact-key', {
-    method: 'POST',
-    headers: {
-        'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-        name: 'User Name',
-        email: 'user@example.com',
-        subject: 'Form Subject',
-        content: 'Message content'
-    })
-});
-```
-
-## Form Submission Requirements
-
-- The form key must match the one in your `config.yml`
-- The request must come from an allowed domain
-- The request must include:
-  - name
-  - email
-  - subject
-  - content
-
-## Response Format
-
-Successful submissions return:
-```json
-{
-    "status": "success",
-    "message": "Form submitted successfully"
-}
-```
-
-## Error Handling
-
-The API returns appropriate HTTP status codes:
-- 404: Form not found
-- 403: Origin not allowed
-- 500: Failed to process form submission
-
-## Development
-
-To run the system locally:
-
-1. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-2. Run the form handler:
-```bash
-PORT=1234 INSTANCE_EMAIL=info@example.com python form_handler.py
-```
-
-3. Run the iCloud mail daemon:
-```bash
-python icloud_mail_daemon.py
-```
-
-## Security Considerations
-
-### Environment Variables
-- Never commit your `.env` file to version control
-- Use strong, unique app-specific passwords for iCloud
-- Consider using a secrets management service in production
-
-### Form Submission Security
-- CORS is configured to only allow requests from specified domains
-- Form keys should be long, random strings
-- Consider implementing rate limiting for form submissions
-- Validate and sanitize all form inputs
-- Use HTTPS for all API endpoints in production
-
-### Email Security
-- SMTP connections use TLS by default
-- Email addresses are validated before sending
-- Consider implementing SPF, DKIM, and DMARC records for your domains
-- Monitor for suspicious activity in your email logs
-
-### Docker Security
-- Run containers with non-root users
-- Keep your base images updated
-- Use Docker secrets for sensitive information
-- Consider using a reverse proxy (like Nginx) in front of your API
-
-## Performance Tuning
-
-### Form Handler
-- The FastAPI server is configured for async operations
-- Consider adjusting the number of workers based on your server's CPU cores
-- Implement connection pooling for SMTP connections
-- Cache frequently accessed configuration data
-
-### iCloud Mail Daemon
-- The default check interval is 30 seconds
-- Adjust the check interval based on your needs:
-  ```python
-  # In icloud_mail_daemon.py
-  CHECK_INTERVAL = 30  # seconds
-  ```
-- Consider implementing exponential backoff for failed connections
-- Use connection pooling for IMAP connections
-
-### Docker Configuration
-- Set appropriate resource limits in your compose file:
-  ```yaml
-  services:
-    mailbridge-example:
-      # ... other config ...
-      deploy:
-        resources:
-          limits:
-            cpus: '0.5'
-            memory: 512M
-  ```
-- Consider using Docker's healthcheck feature
-- Monitor container resource usage
-
-### Monitoring
-- Enable logging for both services
-- Consider implementing Prometheus metrics
-- Set up alerts for:
-  - Failed form submissions
-  - SMTP/IMAP connection issues
-  - High resource usage
-  - Unusual activity patterns
 
 ## License
 
 MIT License
 
-Copyright (c) 2025 Matt Hammond Inc
+Copyright (c) 2025 Matt Hammond
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

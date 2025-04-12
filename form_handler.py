@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Request, Response, Depends
+from fastapi import FastAPI, HTTPException, Request, Response, Depends, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional, Dict, Any
@@ -128,9 +128,29 @@ class FormSubmission(BaseModel):
 async def submit_form(
     request: Request,
     form_key: str,
-    submission: FormSubmission,
+    name: str = Form(None),
+    email: str = Form(None),
+    subject: str = Form(None),
+    content: str = Form(None),
+    captcha_token: Optional[str] = Form(None),
     redis_client: redis.Redis = Depends(lambda: redis_client)
 ):
+    # If form data is provided, use it; otherwise try to parse JSON
+    if name and email and subject and content:
+        submission = FormSubmission(
+            name=name,
+            email=email,
+            subject=subject,
+            content=content,
+            captcha_token=captcha_token
+        )
+    else:
+        try:
+            json_data = await request.json()
+            submission = FormSubmission(**json_data)
+        except:
+            raise HTTPException(status_code=422, detail="Invalid request format")
+
     # Validate form key
     form_config = next((f for f in config["forms"] if f["key"] == form_key), None)
     if not form_config:
