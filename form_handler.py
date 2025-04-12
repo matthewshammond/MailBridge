@@ -103,12 +103,15 @@ allowed_origins = []
 for form_name, form_data in config["forms"].items():
     allowed_origins.extend(form_data.get("allowed_domains", []))
 
+# Convert domains to full origins with https://
+allowed_origins = [f"https://{domain}" for domain in allowed_origins]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
+    allow_origins=allowed_origins,  # Only allow specific origins
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["POST"],  # Only allow POST method
+    allow_headers=["Content-Type", "Origin"],  # Only allow necessary headers
 )
 
 class FormSubmission(BaseModel):
@@ -134,11 +137,6 @@ class FormSubmission(BaseModel):
 async def submit_form(
     request: Request,
     form_key: str,
-    name: str = Form(None),
-    email: str = Form(None),
-    subject: str = Form(None),
-    content: str = Form(None),
-    captcha_token: Optional[str] = Form(None),
     redis_client: redis.Redis = Depends(lambda: redis_client)
 ):
     # Validate form key and get form config
@@ -156,26 +154,20 @@ async def submit_form(
     if not origin:
         raise HTTPException(status_code=403, detail="Origin header required")
     
-    # Check if origin is in allowed domains
+    # Check if origin is in allowed domains for this specific form
     origin_domain = origin.replace("https://", "").replace("http://", "")
     if not any(domain in origin_domain for domain in form_config.get("allowed_domains", [])):
         raise HTTPException(status_code=403, detail="Origin not allowed")
 
-    # If form data is provided, use it; otherwise try to parse JSON
-    if name and email and subject and content:
-        submission = FormSubmission(
-            name=name,
-            email=email,
-            subject=subject,
-            content=content,
-            captcha_token=captcha_token
-        )
-    else:
-        try:
-            json_data = await request.json()
-            submission = FormSubmission(**json_data)
-        except:
-            raise HTTPException(status_code=422, detail="Invalid request format")
+    # Get form data
+    form_data = await request.form()
+    submission = FormSubmission(
+        name=form_data.get("name"),
+        email=form_data.get("email"),
+        subject=form_data.get("subject"),
+        content=form_data.get("content"),
+        captcha_token=form_data.get("captcha_token")
+    )
 
     # Check rate limit
     ip = request.client.host
@@ -189,8 +181,18 @@ async def submit_form(
     # Start email sending in background
     asyncio.create_task(send_form_submission_email(form_config, submission))
     
-    # Return success response immediately
-    return {"status": "success", "message": "Form submitted successfully"}
+    # Create response
+    response_data = {"status": "success", "message": "Form submitted successfully"}
+    response = Response(
+        content=json.dumps(response_data),
+        media_type="application/json",
+        status_code=200
+    )
+    
+    # Log response
+    logger.info("📤 Sending response: %s", response_data)
+    
+    return response
 
 async def send_form_submission_email(form_config: Dict[str, Any], submission: FormSubmission):
     # Get email configuration
