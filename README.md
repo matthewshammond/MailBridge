@@ -40,27 +40,20 @@ A modern, secure, and efficient form submission and email response system built 
 
 ## Setup
 
-### Environment Variables
-
-Copy `.env.sample` to `.env` and update with your iCloud credentials:
-
+1. Clone the repository:
 ```bash
-cp .env.sample .env
+git clone https://github.com/matthewshammond/mailbridge.git
+cd mailbridge
 ```
 
-Update the `.env` file with your iCloud SMTP settings:
-
-```env
-# iCloud SMTP settings
+2. Update the `.env` file with your iCloud settings:
+```bash
+# iCloud settings
 ICLOUD_EMAIL=your_icloud_email@icloud.com
-ICLOUD_APP_PASSWORD=your_app_specific_password
-ICLOUD_SMTP_HOST=smtp.mail.me.com
-ICLOUD_SMTP_PORT=587
-
-# Instance configuration
-INSTANCE_EMAILS=info@example.com,contact@website.com
-PORT=2525
+ICLOUD_PASSWORD=your_app_specific_password
 ```
+
+Note: The SMTP host (smtp.mail.me.com) and port (587) are hardcoded in the application as these are standard iCloud SMTP settings. Instance configuration (PORT and INSTANCE_EMAILS) is handled in the compose.yaml file.
 
 ### Configuration Files
 
@@ -98,11 +91,26 @@ forms:
       "body": "<p>Name: %s<br>Email: %s<br>Subject: %s<br><br>%s</p>"
     },
     "response_templates": {
-      "general": "<p>Thank you for your message...</p>",
-      "support": "<p>Thank you for contacting support...</p>",
-      "feedback": "<p>Thank you for your feedback...</p>"
+      "general": "<p>Thank you for your message. We will get back to you soon.</p>",
+      "support": "<p>Thank you for contacting support. We will address your issue shortly.</p>",
+      "feedback": "<p>Thank you for your feedback. We appreciate your input.</p>"
     },
-    "signature": "<p>Your signature HTML here</p>"
+    "signature": "<p>Best regards,<br>Your Name</p>"
+  },
+  "info@example.com": {
+    "subjects": {
+      "general": "Re: %s",
+      "inquiry": "Re: Inquiry - %s"
+    },
+    "form_submission_template": {
+      "subject": "New Submission with subject: %s",
+      "body": "<p>Name: %s<br>Email: %s<br>Subject: %s<br><br>%s</p>"
+    },
+    "response_templates": {
+      "general": "<p>Thank you for your message. We will get back to you soon.</p>",
+      "inquiry": "<p>Thank you for your inquiry. We will respond shortly.</p>"
+    },
+    "signature": "<p>Best regards,<br>Your Name</p>"
   }
 }
 ```
@@ -333,6 +341,7 @@ $(document).ready(function() {
     });
 });
 </script>
+```
 
 ##### Complete Form Implementation (with CAPTCHA)
 
