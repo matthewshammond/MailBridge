@@ -1,0 +1,61 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: mailbridge-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+
+  mailbridge-example:
+    build: .
+    container_name: mailbridge-example
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - PORT=1234
+      - INSTANCE_EMAIL=info@example.com
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ./config:/config
+    depends_on:
+      - redis
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+        window: 120s
+
+  mailbridge-exmaple2:
+    build: .
+    container_name: mailbridge-example2
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - PORT=1235
+      - INSTANCE_EMAIL=contact@website.com
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ./config:/config
+    depends_on:
+      - redis
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+        window: 120s
+
+volumes:
+  redis_data:

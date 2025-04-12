@@ -1,0 +1,25 @@
+{
+  "contact@website.com": {
+    "subjects": {
+      "Contact Request": "Thank you for reaching out! I'll review your message and get back to you as soon as possible."
+    },
+    "signature": "<p><strong>First Last</strong><br>contact@website.com<br><a href='https://website.com'>website.com</a></p>",
+    "form_submission_template": {
+      "subject": "New Submission with subject: %s",
+      "body": "<p>First,</p><p>Someone has just submitted a new form on your website.</p><p>Thank you,<br>website.com</p><p><br></p><p><b>Name:</b> %s</p><p><b>Email:</b> %s</p><p><b>Subject:</b> %s</p><p><b>Content:</b><br><br>%s</p>"
+    }
+  },
+  "info@example.com": {
+    "subjects": {
+      "Example: Access Request": "Thank you for requesting access to Example! I'll review your message and reach out promptly if I have any questions regarding your access request.",
+      "Example: General Inquiry": "Thank you for reaching out! I'll review your message and get back to you promptly with more information.",
+      "Example: Bug Report": "Thank you for bringing this issue to my attention! I'll review your report thoroughly and will reach out promptly if I need any additional details to address the bug.",
+      "Example: Feature Request": "Thank you for suggesting a new feature! I'll review your request and will reach out promptly if I need any additional details. I appreciate your input and interest in improving AeroPoint!"
+    },
+    "signature": "<p><strong>Example Team</strong><br>info@example.com<br><a href='https://example.com'>example.com</a></p>",
+    "form_submission_template": {
+      "subject": "Example: %s",
+      "body": "<p>First,</p><p>Someone has just submitted a new form at Example.com.</p><p>Thank you,<br>Example Team</p><p><br></p><p><b>Name:</b> %s</p><p><b>Email:</b> %s</p><p><b>Subject:</b> %s</p><p><b>Content:</b><br><br>%s</p>"
+    }
+  }
+}
