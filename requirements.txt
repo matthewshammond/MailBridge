@@ -6,6 +6,6 @@ aiosmtplib==3.0.1
 pydantic==2.6.1
 pyyaml==6.0.1
 slowapi==0.1.8
-aioredis==2.0.1
-redis==5.0.1
+redis[hiredis]==5.0.1
 email-validator==2.1.0.post1
+setuptools==69.2.0

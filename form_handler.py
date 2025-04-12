@@ -1,7 +1,7 @@
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import List, Optional, Dict
+from pydantic import BaseModel, EmailStr
+from typing import List, Optional, Dict, Any
 import yaml
 import os
 import aiosmtplib
@@ -14,9 +14,13 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from fastapi.middleware.gzip import GZipMiddleware
-import aioredis
+import asyncio
+import redis.asyncio as redis
 from functools import lru_cache
-import smtplib
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -28,18 +32,12 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-# Redis connection pool for rate limiting and caching
-redis_pool = None
-
-async def get_redis():
-    global redis_pool
-    if redis_pool is None:
-        redis_pool = await aioredis.from_url(
-            "redis://localhost",
-            encoding="utf-8",
-            decode_responses=True
-        )
-    return redis_pool
+# Redis connection
+redis_client = redis.Redis(
+    host=os.getenv("REDIS_HOST", "redis"),
+    port=int(os.getenv("REDIS_PORT", 6379)),
+    decode_responses=True
+)
 
 # Cache configuration
 @lru_cache(maxsize=128)
@@ -98,9 +96,10 @@ app.add_middleware(
 
 class FormSubmission(BaseModel):
     name: str
-    email: str
+    email: EmailStr
     subject: str
     content: str
+    captcha_token: Optional[str] = None
 
     def validate(self):
         # Basic input validation
@@ -113,80 +112,76 @@ class FormSubmission(BaseModel):
         if not self.content.strip() or len(self.content) > 10000:
             raise ValueError("Invalid content")
 
-def send_form_submission_email(form_data: dict, form_config: dict, responses: dict) -> bool:
-    """Send form submission email using the template from responses.json"""
-    try:
-        # Get the form's email address
-        to_email = form_config['to_email'][0]  # First email in the list
-        
-        # Get the form submission template
-        template = responses[to_email]['form_submission_template']
-        
-        # Format the email body
-        body = template['body'] % (
-            form_data['name'],
-            form_data['email'],
-            form_data['subject'],
-            form_data['content'].replace('\n', '<br>')
-        )
-        
-        # Create the email
-        msg = MIMEMultipart()
-        msg['From'] = f"{form_config['from_name']} <{to_email}>"
-        msg['To'] = to_email
-        
-        # Set subject based on the template
-        msg['Subject'] = template['subject'] % form_data['subject']
-        
-        msg['Reply-To'] = f"{form_data['name']} <{form_data['email']}>"
-        msg.attach(MIMEText(body, 'html'))
-        
-        # Send the email
-        with smtplib.SMTP(config['global']['smtp']['host'], config['global']['smtp']['port']) as server:
-            if not config['global']['smtp']['disable_tls']:
-                server.starttls()
-            server.login(
-                config['global']['smtp']['user'],
-                config['global']['smtp']['password']
-            )
-            server.send_message(msg)
-        
-        return True
-    except Exception as e:
-        logger.error(f"Error sending form submission email: {str(e)}")
-        return False
+@app.on_event("startup")
+async def startup_event():
+    logger.info("✅ Loaded response config with %d email aliases", len(responses))
+    for email, config in responses.items():
+        logger.info("📋 %s has %d response templates", email, len(config.get("subjects", {})))
 
 @app.post("/api/v1/form/{form_key}")
 @limiter.limit("5/minute")
-async def handle_form_submission(form_key: str, request: Request, submission: FormSubmission):
-    """Handle form submissions"""
+async def submit_form(
+    request: Request,
+    form_key: str,
+    submission: FormSubmission,
+    redis_client: redis.Redis = Depends(lambda: redis_client)
+):
+    # Validate form key
+    form_config = next((f for f in config["forms"] if f["key"] == form_key), None)
+    if not form_config:
+        raise HTTPException(status_code=404, detail="Form not found")
+
+    # Validate origin
+    origin = request.headers.get("origin", "")
+    if origin and origin not in form_config.get("allowed_domains", []):
+        raise HTTPException(status_code=403, detail="Origin not allowed")
+
+    # Check rate limit
+    ip = request.client.host
+    key = f"rate_limit:{ip}:{form_key}"
+    current = await redis_client.get(key)
+    if current and int(current) >= 5:  # 5 requests per minute
+        raise HTTPException(status_code=429, detail="Too many requests")
+    await redis_client.incr(key)
+    await redis_client.expire(key, 60)  # Reset after 1 minute
+
+    # Send email
     try:
-        # Validate form key and get form config
-        form_config = next((f for f in config['forms'].values() if f['key'] == form_key), None)
-        if not form_config:
-            raise HTTPException(status_code=404, detail="Form not found")
-        
-        # Validate origin
-        origin = request.headers.get('origin', '')
-        if not any(domain in origin for domain in form_config['allowed_domains']):
-            raise HTTPException(status_code=403, detail="Domain not allowed")
-        
-        # Rate limiting
-        client_ip = request.client.host
-        if not rate_limiter.check_rate_limit(client_ip):
-            raise HTTPException(status_code=429, detail="Too many requests")
-        
-        # Send form submission email
-        if not send_form_submission_email(submission.dict(), form_config, responses):
-            raise HTTPException(status_code=500, detail="Failed to send email")
-        
+        await send_form_submission_email(form_config, submission)
         return {"status": "success", "message": "Form submitted successfully"}
-    
-    except HTTPException as he:
-        raise he
     except Exception as e:
-        logger.error(f"Error handling form submission: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        logger.error("Error sending email: %s", str(e))
+        raise HTTPException(status_code=500, detail="Failed to send email")
+
+async def send_form_submission_email(form_config: Dict[str, Any], submission: FormSubmission):
+    # Get email configuration
+    email_config = responses.get(form_config["email"])
+    if not email_config:
+        raise ValueError(f"No email configuration found for {form_config['email']}")
+
+    # Create message
+    msg = MIMEMultipart()
+    msg["From"] = os.getenv("ICLOUD_EMAIL")
+    msg["To"] = form_config["email"]
+    msg["Subject"] = email_config["form_submission_template"]["subject"] % submission.subject
+
+    # Add body
+    body = email_config["form_submission_template"]["body"] % (
+        submission.name,
+        submission.email,
+        submission.subject,
+        submission.content
+    )
+    msg.attach(MIMEText(body, "html"))
+
+    # Send email
+    async with aiosmtplib.SMTP(
+        hostname=os.getenv("ICLOUD_SMTP_HOST"),
+        port=int(os.getenv("ICLOUD_SMTP_PORT")),
+        use_tls=True
+    ) as smtp:
+        await smtp.login(os.getenv("ICLOUD_EMAIL"), os.getenv("ICLOUD_APP_PASSWORD"))
+        await smtp.send_message(msg)
 
 if __name__ == "__main__":
     import uvicorn
