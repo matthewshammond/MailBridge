@@ -2,7 +2,7 @@
 
 <div align="center">
   <a href="https://github.com/matthewshammond/mailbridge">
-    <img src="mailbridge-wide.png" alt="MailBridge Logo" width="200"/>
+    <img src="mailbridge.png" alt="MailBridge Logo" width="500"/>
   </a>
   <h3>A modern, secure, and efficient form submission and email response system</h3>
 </div>
