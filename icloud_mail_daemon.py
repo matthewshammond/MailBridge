@@ -7,6 +7,7 @@ import os
 import json
 from email.message import EmailMessage
 from dotenv import load_dotenv
+import requests
 
 load_dotenv()
 
@@ -21,12 +22,35 @@ IMAP_PORT = 993  # SSL/TLS
 SMTP_SERVER = "smtp.mail.me.com"
 SMTP_PORT = 587  # STARTTLS
 
+PUSHOVER_ENABLED = os.getenv("PUSHOVER_ENABLED", "false").lower() == "true"
+PUSHOVER_USER_KEY = os.getenv("PUSHOVER_USER_KEY")
+PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
+
 # Load response map
 with open(RESPONSE_MAP_PATH, "r") as f:
     RESPONSE_CONFIG = json.load(f)
     print(f"✅ Loaded response config with {len(RESPONSE_CONFIG)} email aliases", flush=True)
     for alias in RESPONSE_CONFIG:
         print(f"📋 {alias} has {len(RESPONSE_CONFIG[alias]['subjects'])} response templates", flush=True)
+
+def send_pushover_notification(title, message):
+    if not PUSHOVER_ENABLED:
+        return
+    if not PUSHOVER_USER_KEY or not PUSHOVER_API_TOKEN:
+        print("Pushover credentials not set.")
+        return
+    payload = {
+        "token": PUSHOVER_API_TOKEN,
+        "user": PUSHOVER_USER_KEY,
+        "title": title,
+        "message": message
+    }
+    try:
+        response = requests.post("https://api.pushover.net/1/messages.json", data=payload)
+        response.raise_for_status()
+        print("Pushover notification sent.")
+    except Exception as e:
+        print(f"Failed to send Pushover notification: {e}")
 
 def extract_fields(body):
     print(f"📧 Raw email body:\n{body}", flush=True)
@@ -99,6 +123,12 @@ def send_reply(to_email, subject_line_from_body, name, response_body, signature,
                 save_to_sent_folder(msg)
             except Exception as e:
                 print(f"❌ Failed to save to Sent folder: {e}", flush=True)
+            
+            # Send pushover notification for response sent
+            send_pushover_notification(
+                "MailBridge: Auto-Reply Sent",
+                f"Auto-reply sent to {to_email} with subject '{subject_line_from_body}'"
+            )
             
             return True
     except Exception as e:
@@ -200,6 +230,11 @@ def process_new_emails():
 
             fields = extract_fields(body)
             if fields["email"] and fields["subject"]:
+                # Send pushover notification for message received
+                send_pushover_notification(
+                    "MailBridge: Message Received",
+                    f"Message received at {header_to}\nFrom: {fields['name']} <{fields['email']}>\nSubject: {fields['subject']}\n---\n{body}"
+                )
                 if send_reply(
                     fields["email"],
                     fields["subject"],
@@ -209,7 +244,7 @@ def process_new_emails():
                     matching_alias
                 ):
                     print(f"✅ Successfully processed email, marking as read", flush=True)
-                    mail.store(num, '+FLAGS', '\\Seen')
+                    mail.store(num, '+FLAGS', '\Seen')
                 else:
                     print(f"❌ Failed to send reply, leaving email unread", flush=True)
             else:
