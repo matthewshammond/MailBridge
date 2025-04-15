@@ -315,7 +315,9 @@ async def send_response_email(to_email: str, to_name: str, subject: str, body: s
     try:
         # Create message
         msg = MIMEMultipart()
-        msg["From"] = f"Matt Hammond <{os.getenv('ICLOUD_EMAIL')}>"
+        from_name = os.getenv("MAILBRIDGE_FROM_NAME", "MailBridge")
+        from_email = os.getenv("MAILBRIDGE_FROM_EMAIL", os.getenv("ICLOUD_EMAIL"))
+        msg["From"] = f"{from_name} <{from_email}>"
         msg["To"] = to_email
         msg["Subject"] = subject
         msg.attach(MIMEText(body, "html"))

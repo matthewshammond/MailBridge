@@ -56,6 +56,15 @@ cd mailbridge
 # iCloud settings
 ICLOUD_EMAIL=your_icloud_email@icloud.com
 ICLOUD_PASSWORD=your_app_specific_password
+
+# Optional: Customize the 'From' name and email address for outgoing emails
+MAILBRIDGE_FROM_NAME="Your Company Name"   # Defaults to 'MailBridge' if not set
+MAILBRIDGE_FROM_EMAIL=your_alias@yourdomain.com   # Defaults to ICLOUD_EMAIL if not set
+
+# Pushover integration (for push notifications)
+PUSHOVER_ENABLED=true                # Set to 'true' to enable, 'false' to disable
+PUSHOVER_USER_KEY=your_user_key      # Your Pushover user key
+PUSHOVER_API_TOKEN=your_api_token    # Your Pushover application API token
 ```
 
 Note: The SMTP host (smtp.mail.me.com) and port (587) are hardcoded in the application as these are standard iCloud SMTP settings. Instance configuration (PORT and INSTANCE_EMAILS) is handled in the compose.yaml file.
