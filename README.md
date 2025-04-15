@@ -18,13 +18,11 @@
     - [compose.yaml](#composeyaml)
   - [Website Integration](#website-integration)
     - [CAPTCHA Setup](#captcha-setup)
-      - [reCAPTCHA](#recaptcha)
-      - [hCaptcha](#hcaptcha)
     - [Form Implementations](#form-implementations)
-      - [Basic Form](#basic-form-implementation)
-      - [Simple jQuery](#simple-jquery-implementation)
-      - [Complete Form (without CAPTCHA)](#complete-form-implementation-without-captcha)
-      - [Complete Form (with CAPTCHA)](#complete-form-implementation-with-captcha)
+      - [Basic Form Implementation](#basic-form-implementation)
+      - [Simple jQuery Implementation](#simple-jquery-implementation)
+      - [Complete Form Implementation (without CAPTCHA)](#complete-form-implementation-without-captcha)
+      - [Complete Form Implementation (with CAPTCHA)](#complete-form-implementation-with-captcha)
   - [Running Services](#running-services)
   - [Testing](#testing)
 - [License](#license)
@@ -53,13 +51,9 @@ cd mailbridge
 
 2. Update the `.env` file with your iCloud settings:
 ```bash
-# iCloud settings
+# iCloud settings (set in .env)
 ICLOUD_EMAIL=your_icloud_email@icloud.com
 ICLOUD_PASSWORD=your_app_specific_password
-
-# Optional: Customize the 'From' name and email address for outgoing emails
-MAILBRIDGE_FROM_NAME="Your Company Name"   # Defaults to 'MailBridge' if not set
-MAILBRIDGE_FROM_EMAIL=your_alias@yourdomain.com   # Defaults to ICLOUD_EMAIL if not set
 
 # Pushover integration (for push notifications)
 PUSHOVER_ENABLED=true                # Set to 'true' to enable, 'false' to disable
@@ -67,7 +61,10 @@ PUSHOVER_USER_KEY=your_user_key      # Your Pushover user key
 PUSHOVER_API_TOKEN=your_api_token    # Your Pushover application API token
 ```
 
-Note: The SMTP host (smtp.mail.me.com) and port (587) are hardcoded in the application as these are standard iCloud SMTP settings. Instance configuration (PORT and INSTANCE_EMAILS) is handled in the compose.yaml file.
+> **Note:**
+> - `PORT` and `INSTANCE_EMAILS` are typically set in `compose.yaml` as environment variables for the container, not in `.env` directly.
+> - Use `.env.sample` as a starting point for your own `.env` file.
+> - Per-form branding for outgoing emails (name and email) is set in `config/config.yml` under each form's `from_name` and `to_email`.
 
 ### Configuration Files
 

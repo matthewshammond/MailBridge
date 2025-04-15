@@ -302,7 +302,9 @@ async def process_email(email_data: Dict[str, Any], responses: Dict[str, Any]) -
             to_email=email_data["from_email"],
             to_name=email_data["from_name"],
             subject=response_subject,
-            body=response_body
+            body=response_body,
+            from_name=form_config["from_name"],
+            from_email=form_config["to_email"][0]
         )
         logger.info("✅ Response sent successfully")
 
@@ -310,13 +312,10 @@ async def process_email(email_data: Dict[str, Any], responses: Dict[str, Any]) -
         logger.error("❌ Error processing email: %s", str(e))
         raise
 
-async def send_response_email(to_email: str, to_name: str, subject: str, body: str):
+async def send_response_email(to_email: str, to_name: str, subject: str, body: str, from_name: str, from_email: str):
     """Send response email using iCloud SMTP."""
     try:
-        # Create message
         msg = MIMEMultipart()
-        from_name = os.getenv("MAILBRIDGE_FROM_NAME", "MailBridge")
-        from_email = os.getenv("MAILBRIDGE_FROM_EMAIL", os.getenv("ICLOUD_EMAIL"))
         msg["From"] = f"{from_name} <{from_email}>"
         msg["To"] = to_email
         msg["Subject"] = subject
