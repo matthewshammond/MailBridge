@@ -8,6 +8,8 @@ import json
 from email.message import EmailMessage
 from dotenv import load_dotenv
 import requests
+from pathlib import Path
+import yaml
 
 load_dotenv()
 
@@ -25,6 +27,14 @@ SMTP_PORT = 587  # STARTTLS
 PUSHOVER_ENABLED = os.getenv("PUSHOVER_ENABLED", "false").lower() == "true"
 PUSHOVER_USER_KEY = os.getenv("PUSHOVER_USER_KEY")
 PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
+
+# Load configuration files
+config_path = Path("/config/config.yml")
+if not config_path.exists():
+    config_path = Path("config/config.yml")
+
+with open(config_path, "r") as f:
+    CONFIG = yaml.safe_load(f)
 
 # Load response map
 with open(RESPONSE_MAP_PATH, "r") as f:
@@ -100,7 +110,20 @@ def save_to_sent_folder(msg: EmailMessage):
 def send_reply(to_email, subject_line_from_body, name, response_body, signature, from_email):
     print(f"📤 Attempting to send reply to {to_email}", flush=True)
     msg = EmailMessage()
-    msg["From"] = from_email
+    
+    # Get form configuration for this email
+    form_config = None
+    for form_name, form_data in CONFIG["forms"].items():
+        if form_data["to_email"][0] == from_email:
+            form_config = form_data
+            break
+    
+    # Set From header with name if found, otherwise just email
+    if form_config:
+        msg["From"] = f"{form_config['from_name']} <{from_email}>"
+    else:
+        msg["From"] = from_email
+        
     msg["To"] = to_email
     msg["Subject"] = f"Re: {subject_line_from_body}"
 
