@@ -270,6 +270,17 @@ async def process_email(email_data: Dict[str, Any], responses: Dict[str, Any]) -
             logger.warning("⚠️  No response configuration found for %s", email_data["to"])
             return
 
+        # Get form configuration for this email
+        form_config = None
+        for form_name, form_data in config["forms"].items():
+            if form_data["to_email"][0] == email_data["to"]:
+                form_config = form_data
+                break
+
+        if not form_config:
+            logger.warning("⚠️  No form configuration found for %s", email_data["to"])
+            return
+
         # Check if we have a matching subject
         matching_subject = None
         for subject in response_config.get("subjects", {}).keys():
@@ -316,7 +327,7 @@ async def send_response_email(to_email: str, to_name: str, subject: str, body: s
     """Send response email using iCloud SMTP."""
     try:
         msg = MIMEMultipart()
-        msg["From"] = f"{form_config['from_name']} <{form_config['to_email'][0]}>"  # Use the form's to_email as the From address
+        msg["From"] = f"{from_name} <{from_email}>"  # Use the passed parameters
         msg["To"] = to_email
         msg["Subject"] = subject
         msg.attach(MIMEText(body, "html"))
