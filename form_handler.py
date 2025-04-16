@@ -77,7 +77,7 @@ with open(responses_path, "r") as f:
     responses = json.load(f)
 
 # Get instance-specific configuration
-instance_port = os.getenv("PORT", "1234")
+instance_port = os.getenv("PORT", "2525")
 instance_emails = os.getenv("INSTANCE_EMAILS", "").split(",")  # Allow multiple emails
 
 if not instance_emails:
@@ -316,7 +316,7 @@ async def send_response_email(to_email: str, to_name: str, subject: str, body: s
     """Send response email using iCloud SMTP."""
     try:
         msg = MIMEMultipart()
-        msg["From"] = f"{from_name} <{from_email}>"
+        msg["From"] = f"{form_config['from_name']} <{form_config['to_email'][0]}>"  # Use the form's to_email as the From address
         msg["To"] = to_email
         msg["Subject"] = subject
         msg.attach(MIMEText(body, "html"))
