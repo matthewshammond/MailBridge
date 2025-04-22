@@ -21,6 +21,7 @@ from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 import imaplib
 import time
+import aiohttp
 
 # Load environment variables
 load_dotenv()
@@ -29,15 +30,21 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    logger.info("✅ Loaded response config with %d email aliases", len(responses))
+    logger.info("✅ Loaded response config with %d email aliases",
+                len(responses))
     for email, config in responses.items():
-        logger.info("📋 %s has %d response templates", email, len(config.get("subjects", {})))
+        logger.info(
+            "📋 %s has %d response templates", email, len(
+                config.get("subjects", {}))
+        )
     yield
     # Shutdown
     await redis_client.close()
+
 
 app = FastAPI(lifespan=lifespan)
 limiter = Limiter(key_func=get_remote_address)
@@ -49,8 +56,9 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 redis_client = redis.Redis(
     host=os.getenv("REDIS_HOST", "redis"),
     port=int(os.getenv("REDIS_PORT", 6379)),
-    decode_responses=True
+    decode_responses=True,
 )
+
 
 # Cache configuration
 @lru_cache(maxsize=128)
@@ -59,6 +67,7 @@ def get_form_config(form_key: str):
         if form_data["key"] == form_key:
             return form_data
     return None
+
 
 # Load configuration
 config_path = Path("/config/config.yml")
@@ -78,7 +87,8 @@ with open(responses_path, "r") as f:
 
 # Get instance-specific configuration
 instance_port = os.getenv("PORT", "2525")
-instance_emails = os.getenv("INSTANCE_EMAILS", "").split(",")  # Allow multiple emails
+instance_emails = os.getenv("INSTANCE_EMAILS", "").split(
+    ",")  # Allow multiple emails
 
 if not instance_emails:
     raise ValueError("INSTANCE_EMAILS environment variable must be set")
@@ -116,6 +126,7 @@ app.add_middleware(
     allow_headers=["Content-Type", "Origin"],  # Only allow necessary headers
 )
 
+
 class FormSubmission(BaseModel):
     name: str
     email: EmailStr
@@ -134,12 +145,23 @@ class FormSubmission(BaseModel):
         if not self.content.strip() or len(self.content) > 10000:
             raise ValueError("Invalid content")
 
+
+async def verify_recaptcha_v3(token: str, secret_key: str) -> bool:
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            "https://www.google.com/recaptcha/api/siteverify",
+            data={"secret": secret_key, "response": token},
+        ) as response:
+            result = await response.json()
+            return result.get("success", False)
+
+
 @app.post("/api/v1/form/{form_key}")
 @limiter.limit("5/minute")
 async def submit_form(
     request: Request,
     form_key: str,
-    redis_client: redis.Redis = Depends(lambda: redis_client)
+    redis_client: redis.Redis = Depends(lambda: redis_client),
 ):
     # Validate form key and get form config
     form_config = None
@@ -155,10 +177,12 @@ async def submit_form(
     origin = request.headers.get("origin")
     if not origin:
         raise HTTPException(status_code=403, detail="Origin header required")
-    
+
     # Check if origin is in allowed domains for this specific form
     origin_domain = origin.replace("https://", "").replace("http://", "")
-    if not any(domain in origin_domain for domain in form_config.get("allowed_domains", [])):
+    if not any(
+        domain in origin_domain for domain in form_config.get("allowed_domains", [])
+    ):
         raise HTTPException(status_code=403, detail="Origin not allowed")
 
     # Get form data
@@ -168,7 +192,7 @@ async def submit_form(
         email=form_data.get("email"),
         subject=form_data.get("subject"),
         content=form_data.get("content"),
-        captcha_token=form_data.get("captcha_token")
+        captcha_token=form_data.get("captcha_token"),
     )
 
     # Check rate limit
@@ -180,16 +204,31 @@ async def submit_form(
     await redis_client.incr(key)
     await redis_client.expire(key, 60)  # Reset after 1 minute
 
+    # Verify reCAPTCHA if enabled
+    if form_config.get("captcha", {}).get("provider") == "recaptcha":
+        if not submission.captcha_token:
+            raise HTTPException(
+                status_code=400, detail="reCAPTCHA token required")
+
+        is_valid = await verify_recaptcha_v3(
+            submission.captcha_token, form_config["captcha"]["secret_key"]
+        )
+
+        if not is_valid:
+            raise HTTPException(
+                status_code=400, detail="Invalid reCAPTCHA token")
+
     # Start email sending in background
     asyncio.create_task(send_form_submission_email(form_config, submission))
-    
     # Return success response immediately
     return {"status": "success", "message": "Form submitted successfully"}
+
 
 def save_to_sent_folder(msg: MIMEMultipart, smtp_user: str, smtp_password: str):
     """Save a copy of the email to the Sent Messages folder."""
     try:
-        logger.info("🔐 Attempting to connect to IMAP server to save to Sent folder")
+        logger.info(
+            "🔐 Attempting to connect to IMAP server to save to Sent folder")
         with imaplib.IMAP4_SSL("imap.mail.me.com", 993) as imap:
             logger.info("🔑 Logging in to IMAP server")
             imap.login(smtp_user, smtp_password)
@@ -198,35 +237,50 @@ def save_to_sent_folder(msg: MIMEMultipart, smtp_user: str, smtp_password: str):
                 '"Sent Messages"',  # iCloud's sent folder name
                 "",  # Flags
                 imaplib.Time2Internaldate(time.time()),  # Date
-                msg.as_bytes()  # Message
+                msg.as_bytes(),  # Message
             )
             logger.info("✅ Successfully saved email to Sent Messages folder")
     except Exception as e:
-        logger.error("❌ Failed to save email to Sent Messages folder: %s", str(e))
+        logger.error(
+            "❌ Failed to save email to Sent Messages folder: %s", str(e))
         logger.error("❌ Error details: %s", str(e.__class__.__name__))
-        if hasattr(e, 'args'):
+        if hasattr(e, "args"):
             logger.error("❌ Error args: %s", str(e.args))
 
-async def send_form_submission_email(form_config: Dict[str, Any], submission: FormSubmission):
+
+async def send_form_submission_email(
+    form_config: Dict[str, Any], submission: FormSubmission
+):
     """Send form submission email using iCloud SMTP."""
     try:
         # Get email configuration
-        email_config = responses.get(form_config["to_email"][0])  # Get first email from to_email list
+        email_config = responses.get(
+            form_config["to_email"][0]
+        )  # Get first email from to_email list
         if not email_config:
-            raise ValueError(f"No email configuration found for {form_config['to_email'][0]}")
+            raise ValueError(
+                f"No email configuration found for {
+                    form_config['to_email'][0]}"
+            )
 
         # Create message
         msg = MIMEMultipart()
-        msg["From"] = f"{form_config['from_name']} <{form_config['to_email'][0]}>"  # Use the form's to_email as the From address
-        msg["To"] = form_config["to_email"][0]  # Use first email from to_email list
-        msg["Subject"] = email_config["form_submission_template"]["subject"] % submission.subject
+        msg["From"] = (
+            # Use the form's to_email as the From address
+            f"{form_config['from_name']} <{form_config['to_email'][0]}>"
+        )
+        # Use first email from to_email list
+        msg["To"] = form_config["to_email"][0]
+        msg["Subject"] = (
+            email_config["form_submission_template"]["subject"] % submission.subject
+        )
 
         # Add body
         body = email_config["form_submission_template"]["body"] % (
             submission.name,
             submission.email,
             submission.subject,
-            submission.content
+            submission.content,
         )
         msg.attach(MIMEText(body, "html"))
 
@@ -241,27 +295,29 @@ async def send_form_submission_email(form_config: Dict[str, Any], submission: Fo
             hostname="smtp.mail.me.com",
             port=587,
             use_tls=False,  # Don't use TLS initially
-            start_tls=True  # Use STARTTLS instead
+            start_tls=True,  # Use STARTTLS instead
         ) as smtp:
             await smtp.login(smtp_user, smtp_password)
             await smtp.send_message(msg)
             logger.info("📨 Email sent successfully via SMTP")
-            
+
             # Save copy to Sent Messages folder in a separate thread
             await asyncio.to_thread(save_to_sent_folder, msg, smtp_user, smtp_password)
-            
+
     except Exception as e:
         logger.error("❌ Failed to send email: %s", str(e))
         logger.error("❌ Error details: %s", str(e.__class__.__name__))
-        if hasattr(e, 'args'):
+        if hasattr(e, "args"):
             logger.error("❌ Error args: %s", str(e.args))
         raise
 
+
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
         "form_handler:app",
         host="0.0.0.0",
         port=int(instance_port),
-        workers=4  # Adjust based on CPU cores
-    ) 
+        workers=4,  # Adjust based on CPU cores
+    )
