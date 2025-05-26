@@ -78,12 +78,11 @@ def extract_fields(body):
             "subject": None
         }
     
-    # Extract first name only
+    # Use full name instead of just first name
     full_name = name_match.group(1).strip()
-    first_name = full_name.split()[0]
     
     fields = {
-        "name": first_name,
+        "name": full_name,  # Store full name
         "email": email_match.group(1).strip(),
         "subject": subject_match.group(1).strip()
     }
@@ -128,7 +127,9 @@ def send_reply(to_email, subject_line_from_body, name, response_body, signature,
     msg["To"] = to_email
     msg["Subject"] = f"Re: {subject_line_from_body}"
 
-    html_body = f"<p>{name},</p><p>{response_body}</p>{signature}"
+    # Extract first name for the greeting
+    first_name = name.split()[0]
+    html_body = f"<p>{first_name},</p><p>{response_body}</p>{signature}"
     msg.set_content(html_body, subtype="html")
 
     try:
