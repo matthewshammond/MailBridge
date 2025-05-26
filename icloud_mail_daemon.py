@@ -53,7 +53,8 @@ def send_pushover_notification(title, message):
         "token": PUSHOVER_API_TOKEN,
         "user": PUSHOVER_USER_KEY,
         "title": title,
-        "message": message
+        "message": message,
+        "html": 1  # Enable HTML formatting
     }
     try:
         response = requests.post("https://api.pushover.net/1/messages.json", data=payload)
