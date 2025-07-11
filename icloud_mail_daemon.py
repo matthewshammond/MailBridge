@@ -312,24 +312,12 @@ def process_new_emails():
 
             print(f"📋 Checking against available responses for {matching_alias}: {list(RESPONSE_CONFIG[matching_alias]['subjects'].keys())}", flush=True)
 
-            # Handle subject matching for both modes
+            # Handle subject matching - same logic for both modes since subjects are now consistent
             matching_subject = None
-            if global_mode == "postmark":
-                # For Postmark mode, look for Postmark-specific subject patterns
-                if "postmark inquiry:" in header_subject.lower():
-                    # Extract the actual subject after "Postmark Inquiry:"
-                    actual_subject = header_subject.replace("Postmark Inquiry:", "").strip()
-                    # Find matching subject in responses
-                    for subject in RESPONSE_CONFIG[matching_alias]['subjects'].keys():
-                        if actual_subject.startswith(subject):
-                            matching_subject = subject
-                            break
-            else:
-                # iCloud mode - check if subject starts with any of the configured subjects
-                for subject in RESPONSE_CONFIG[matching_alias]['subjects'].keys():
-                    if header_subject.startswith(subject):
-                        matching_subject = subject
-                        break
+            for subject in RESPONSE_CONFIG[matching_alias]['subjects'].keys():
+                if header_subject.startswith(subject):
+                    matching_subject = subject
+                    break
 
             if not matching_subject:
                 print(f"⚠️  No matching response for subject: {header_subject}", flush=True)
