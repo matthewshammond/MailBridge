@@ -163,8 +163,103 @@ def send_reply(to_email, subject_line_from_body, name, response_body, signature,
             print(f"❌ Error args: {e.args}", flush=True)
         return False
 
+def send_postmark_reply(to_email, subject_line_from_body, name, response_body, signature, from_email):
+    print(f"📤 Attempting to send Postmark reply to {to_email}", flush=True)
+    msg = EmailMessage()
+    
+    # Get form configuration for this email
+    form_config = None
+    for form_name, form_data in CONFIG["forms"].items():
+        if form_data["to_email"][0] == from_email:
+            form_config = form_data
+            break
+    
+    # Set From header with name if found, otherwise just email
+    if form_config:
+        msg["From"] = f"{form_config['from_name']} <{from_email}>"
+    else:
+        msg["From"] = from_email
+        
+    msg["To"] = to_email
+    msg["Subject"] = f"Re: {subject_line_from_body}"
+
+    # Extract first name for the greeting
+    first_name = name.split()[0]
+    
+    # Postmark-specific HTML body with styling
+    html_body = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+        <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="background-color: #ff6b6b; color: white; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+                <h2 style="margin: 0;">Postmark Response</h2>
+            </div>
+            
+            <p>Hi {first_name},</p>
+            
+            <div style="background-color: #f9f9f9; padding: 15px; border-left: 4px solid #ff6b6b; margin: 15px 0;">
+                {response_body}
+            </div>
+            
+            <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee;">
+                {signature}
+            </div>
+            
+            <div style="margin-top: 20px; font-size: 12px; color: #666; text-align: center;">
+                <p>This is an automated response from your Postmark integration.</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    
+    msg.set_content(html_body, subtype="html")
+
+    try:
+        # Send email using Postmark API
+        postmark_api_key = os.getenv("POSTMARK_API_KEY")
+        postmark_sender_email = os.getenv("POSTMARK_SENDER_EMAIL")
+
+        if not postmark_api_key or not postmark_sender_email:
+            print("❌ Missing Postmark API key or sender email", flush=True)
+            return False
+
+        # Import postmarker here to avoid import issues
+        from postmarker.core import PostmarkClient
+        
+        # Create Postmark client
+        postmark = PostmarkClient(server_token=postmark_api_key)
+        
+        # Send email via Postmark
+        response = postmark.emails.send(
+            From=postmark_sender_email,
+            To=to_email,
+            Subject=f"Re: {subject_line_from_body}",
+            HtmlBody=html_body
+        )
+        
+        print(f"✔ Sent Postmark reply to {to_email}", flush=True)
+        print(f"📧 Postmark Message ID: {response.get('MessageID')}", flush=True)
+        
+        # Send pushover notification for response sent
+        send_pushover_notification(
+            "MailBridge: Postmark Auto-Reply Sent",
+            f"Postmark auto-reply sent to {to_email} with subject '{subject_line_from_body}'"
+        )
+        
+        return True
+    except Exception as e:
+        print(f"❌ Postmark API Error: {e}", flush=True)
+        print(f"❌ Error details: {e.__class__.__name__}", flush=True)
+        if hasattr(e, 'args'):
+            print(f"❌ Error args: {e.args}", flush=True)
+        return False
+
 def process_new_emails():
     try:
+        # Check global mode configuration
+        global_mode = CONFIG.get("global", {}).get("mode", "current")
+        
         # Get the instance emails from environment
         instance_emails = os.getenv("INSTANCE_EMAILS", "").split(",")
         if not instance_emails:
@@ -223,12 +318,24 @@ def process_new_emails():
 
             print(f"📋 Checking against available responses for {matching_alias}: {list(RESPONSE_CONFIG[matching_alias]['subjects'].keys())}", flush=True)
 
-            # Check if subject starts with any of the configured subjects
+            # Handle different modes for subject matching
             matching_subject = None
-            for subject in RESPONSE_CONFIG[matching_alias]['subjects'].keys():
-                if header_subject.startswith(subject):
-                    matching_subject = subject
-                    break
+            if global_mode == "postmark":
+                # For Postmark mode, look for Postmark-specific subject patterns
+                if "postmark inquiry:" in header_subject.lower():
+                    # Extract the actual subject after "Postmark Inquiry:"
+                    actual_subject = header_subject.replace("Postmark Inquiry:", "").strip()
+                    # Find matching subject in responses
+                    for subject in RESPONSE_CONFIG[matching_alias]['subjects'].keys():
+                        if actual_subject.startswith(subject):
+                            matching_subject = subject
+                            break
+            else:
+                # iCloud mode - check if subject starts with any of the configured subjects
+                for subject in RESPONSE_CONFIG[matching_alias]['subjects'].keys():
+                    if header_subject.startswith(subject):
+                        matching_subject = subject
+                        break
 
             if not matching_subject:
                 print(f"⚠️  No matching response for subject: {header_subject}", flush=True)
@@ -256,18 +363,36 @@ def process_new_emails():
             fields = extract_fields(body)
             if fields["email"] and fields["subject"]:
                 # Send pushover notification for message received
+                notification_title = "MailBridge: Message Received"
+                if global_mode == "postmark":
+                    notification_title = "MailBridge: Postmark Message Received"
+                
                 send_pushover_notification(
-                    "MailBridge: Message Received",
+                    notification_title,
                     f"Message received at {header_to}\nFrom: {fields['name']} <{fields['email']}>\nSubject: {fields['subject']}\n---\n{body}"
                 )
-                if send_reply(
-                    fields["email"],
-                    fields["subject"],
-                    fields["name"],
-                    RESPONSE_CONFIG[matching_alias]['subjects'][matching_subject],
-                    RESPONSE_CONFIG[matching_alias]['signature'],
-                    matching_alias
-                ):
+                
+                # Handle different reply logic based on mode
+                if global_mode == "postmark":
+                    success = send_postmark_reply(
+                        fields["email"],
+                        fields["subject"],
+                        fields["name"],
+                        RESPONSE_CONFIG[matching_alias]['subjects'][matching_subject],
+                        RESPONSE_CONFIG[matching_alias]['signature'],
+                        matching_alias
+                    )
+                else:
+                    success = send_reply(
+                        fields["email"],
+                        fields["subject"],
+                        fields["name"],
+                        RESPONSE_CONFIG[matching_alias]['subjects'][matching_subject],
+                        RESPONSE_CONFIG[matching_alias]['signature'],
+                        matching_alias
+                    )
+                
+                if success:
                     print(f"✅ Successfully processed email, marking as read", flush=True)
                     mail.store(num, '+FLAGS', '\Seen')
                 else:

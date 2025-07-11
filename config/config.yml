@@ -1,38 +1,36 @@
+forms:
+    example-access:
+        allowed_domains:
+        - example.com
+        - www.example.com
+        - site.example.com
+        from_name: Example Team
+        key: example2-contact-key
+        to_email:
+        - info@example.com
+    example-contact:
+        allowed_domains:
+        - website.com
+        - www.website.com
+        - site.website.com
+        from_name: First Last
+        key: example3-contact-key
+        to_email:
+        - contact@website.com
+    example-feature:
+        allowed_domains:
+        - example.com
+        - www.example.com
+        - site.example.com
+        from_name: Example Team
+        key: example-contact-key
+        to_email:
+        - info@example.com
 global:
+    mode: iCloud
     smtp:
-        host: smtp.mail.me.com  # iCloud SMTP server
+        disable_tls: false
+        host: smtp.mail.me.com
+        password: ${ICLOUD_PASSWORD}
         port: 587
         user: ${ICLOUD_EMAIL}
-        password: ${ICLOUD_PASSWORD}
-        disable_tls: false
-
-forms:
-    example-feature:
-        key: example-contact-key
-        allowed_domains:
-            - example.com
-            - www.example.com
-            - site.example.com
-        to_email:
-            - info@example.com
-        from_name: Example Team
-
-    example-access:
-        key: example2-contact-key
-        allowed_domains:
-            - example.com
-            - www.example.com
-            - site.example.com
-        to_email:
-            - info@example.com
-        from_name: Example Team
-
-    example-contact:
-        key: example3-contact-key
-        allowed_domains:
-            - website.com
-            - www.website.com
-            - site.website.com
-        to_email:
-            - contact@website.com
-        from_name: First Last 

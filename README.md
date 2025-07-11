@@ -40,6 +40,8 @@
 - Gzip compression
 - CAPTCHA support (optional)
 - Multiple email alias support
+- **Mode switching between iCloud and Postmark integrations**
+- **Postmark-specific email formatting and branding**
 
 ## Setup
 
@@ -49,12 +51,24 @@ git clone https://github.com/matthewshammond/mailbridge.git
 cd mailbridge
 ```
 
-2. Update the `.env` file with your iCloud settings:
+2. Update the `.env` file with your settings:
+
+For iCloud mode:
 ```bash
 # iCloud settings (set in .env)
 ICLOUD_EMAIL=your_icloud_email@icloud.com
 ICLOUD_PASSWORD=your_app_specific_password
+```
 
+For Postmark mode:
+```bash
+# Postmark settings (set in .env)
+POSTMARK_API_KEY=your_postmark_api_key
+POSTMARK_SENDER_EMAIL=your_verified_sender@yourdomain.com
+```
+
+For both modes:
+```bash
 # Pushover integration (for push notifications)
 PUSHOVER_ENABLED=true                # Set to 'true' to enable, 'false' to disable
 PUSHOVER_USER_KEY=your_user_key      # Your Pushover user key
@@ -170,6 +184,66 @@ services:
 volumes:
   redis_data:
 ```
+
+### Mode Configuration
+
+MailBridge supports multiple integration modes that can be easily switched using the provided utility script.
+
+#### Available Modes
+
+1. **iCloud Mode** (default): Standard MailBridge functionality using iCloud
+   - Regular email formatting
+   - Standard auto-reply system
+   - Traditional form processing using iCloud SMTP
+
+2. **Postmark Mode**: Postmark-specific integration
+   - Postmark-branded email formatting
+   - Subject lines prefixed with "Postmark Inquiry:"
+   - Styled auto-replies with Postmark branding
+   - Enhanced Pushover notifications
+   - Uses Postmark API for email delivery
+
+#### Switching Modes
+
+Use the provided utility script to switch between modes:
+
+```bash
+# Switch to Postmark mode
+python switch_mode.py postmark
+
+# Switch back to iCloud mode
+python switch_mode.py icloud
+
+# Check current mode status
+python switch_mode.py status
+```
+
+#### Configuration
+
+The mode is configured in your `config.yml` file under the global section:
+
+```yaml
+global:
+    # Mode configuration: "iCloud" for existing setup, "postmark" for Postmark integration
+    mode: iCloud  # Options: iCloud, postmark
+    smtp:
+        host: smtp.mail.me.com
+        port: 587
+        user: ${ICLOUD_EMAIL}
+        password: ${ICLOUD_PASSWORD}
+        disable_tls: false
+```
+
+#### Postmark Mode Features
+
+When in Postmark mode, the following changes occur:
+
+- **Form Submissions**: Emails are formatted with Postmark-specific styling and branding
+- **Subject Lines**: All subjects are prefixed with "Postmark Inquiry:"
+- **Auto-Replies**: Responses include Postmark branding and styled formatting
+- **Notifications**: Pushover notifications indicate Postmark mode
+- **Email Processing**: The system looks for Postmark-specific subject patterns
+- **Email Delivery**: Uses Postmark API instead of iCloud SMTP
 
 ### Website Integration
 

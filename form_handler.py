@@ -163,6 +163,9 @@ async def submit_form(
     form_key: str,
     redis_client: redis.Redis = Depends(lambda: redis_client),
 ):
+    # Check global mode configuration
+    global_mode = config.get("global", {}).get("mode", "current")
+    
     # Validate form key and get form config
     form_config = None
     for form_name, form_data in config["forms"].items():
@@ -218,8 +221,14 @@ async def submit_form(
             raise HTTPException(
                 status_code=400, detail="Invalid reCAPTCHA token")
 
-    # Start email sending in background
-    asyncio.create_task(send_form_submission_email(form_config, submission))
+    # Handle different modes
+    if global_mode == "postmark":
+        # Start Postmark-specific email processing in background
+        asyncio.create_task(send_postmark_form_submission_email(form_config, submission))
+    else:
+        # Start iCloud email sending in background
+        asyncio.create_task(send_form_submission_email(form_config, submission))
+    
     # Return success response immediately
     return {"status": "success", "message": "Form submitted successfully"}
 
@@ -306,6 +315,85 @@ async def send_form_submission_email(
 
     except Exception as e:
         logger.error("❌ Failed to send email: %s", str(e))
+        logger.error("❌ Error details: %s", str(e.__class__.__name__))
+        if hasattr(e, "args"):
+            logger.error("❌ Error args: %s", str(e.args))
+        raise
+
+
+async def send_postmark_form_submission_email(
+    form_config: Dict[str, Any], submission: FormSubmission
+):
+    """Send form submission email using Postmark-specific formatting and logic."""
+    try:
+        # Get email configuration
+        email_config = responses.get(
+            form_config["to_email"][0]
+        )  # Get first email from to_email list
+        if not email_config:
+            raise ValueError(
+                f"No email configuration found for {
+                    form_config['to_email'][0]}"
+            )
+
+        # Create message with Poshmark-specific formatting
+        msg = MIMEMultipart()
+        msg["From"] = (
+            # Use the form's to_email as the From address
+            f"{form_config['from_name']} <{form_config['to_email'][0]}>"
+        )
+        # Use first email from to_email list
+        msg["To"] = form_config["to_email"][0]
+        
+        # Postmark-specific subject formatting
+        postmark_subject = f"Postmark Inquiry: {submission.subject}"
+        msg["Subject"] = postmark_subject
+
+        # Postmark-specific body formatting
+        postmark_body = f"""
+        <html>
+        <body>
+            <h2>Postmark Inquiry Received</h2>
+            <p><strong>Customer Name:</strong> {submission.name}</p>
+            <p><strong>Customer Email:</strong> {submission.email}</p>
+            <p><strong>Inquiry Subject:</strong> {submission.subject}</p>
+            <p><strong>Message:</strong></p>
+            <div style="background-color: #f5f5f5; padding: 15px; border-left: 4px solid #ff6b6b; margin: 10px 0;">
+                {submission.content}
+            </div>
+            <hr>
+            <p><em>This inquiry was received through your Postmark integration.</em></p>
+        </body>
+        </html>
+        """
+        msg.attach(MIMEText(postmark_body, "html"))
+
+        # Send email using Postmark API
+        postmark_api_key = os.getenv("POSTMARK_API_KEY")
+        postmark_sender_email = os.getenv("POSTMARK_SENDER_EMAIL")
+
+        if not postmark_api_key or not postmark_sender_email:
+            raise ValueError("Missing Postmark API key or sender email")
+
+        # Import postmarker here to avoid import issues
+        from postmarker.core import PostmarkClient
+        
+        # Create Postmark client
+        postmark = PostmarkClient(server_token=postmark_api_key)
+        
+        # Send email via Postmark
+        response = postmark.emails.send(
+            From=postmark_sender_email,
+            To=form_config["to_email"][0],
+            Subject=postmark_subject,
+            HtmlBody=postmark_body
+        )
+        
+        logger.info("📨 Postmark email sent successfully via API")
+        logger.info(f"📧 Postmark Message ID: {response.get('MessageID')}")
+
+    except Exception as e:
+        logger.error("❌ Failed to send Postmark email: %s", str(e))
         logger.error("❌ Error details: %s", str(e.__class__.__name__))
         if hasattr(e, "args"):
             logger.error("❌ Error args: %s", str(e.args))
