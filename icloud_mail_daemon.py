@@ -213,31 +213,25 @@ def send_postmark_reply(to_email, subject_line_from_body, name, response_body, s
     </html>
     """
     
-    msg.set_content(html_body, subtype="html")
-
     try:
-        # Send email using Postmark API
-        postmark_api_key = os.getenv("POSTMARK_API_KEY")
-        postmark_sender_email = os.getenv("POSTMARK_SENDER_EMAIL")
+        # Use per-form Postmark credentials if present, else fallback to env
+        postmark_api_key = form_config.get("postmark", {}).get("api_key") if form_config else None
+        postmark_sender_email = form_config.get("postmark", {}).get("sender_email") if form_config else None
+        postmark_api_key = postmark_api_key or os.getenv("POSTMARK_API_KEY")
+        postmark_sender_email = postmark_sender_email or os.getenv("POSTMARK_SENDER_EMAIL")
 
         if not postmark_api_key or not postmark_sender_email:
             print("❌ Missing Postmark API key or sender email", flush=True)
             return False
 
-        # Import postmarker here to avoid import issues
         from postmarker.core import PostmarkClient
-        
-        # Create Postmark client
         postmark = PostmarkClient(server_token=postmark_api_key)
-        
-        # Send email via Postmark
         response = postmark.emails.send(
             From=postmark_sender_email,
             To=to_email,
             Subject=f"Re: {subject_line_from_body}",
             HtmlBody=html_body
         )
-        
         print(f"✔ Sent Postmark reply to {to_email}", flush=True)
         print(f"📧 Postmark Message ID: {response.get('MessageID')}", flush=True)
         

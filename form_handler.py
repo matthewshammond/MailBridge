@@ -336,20 +336,14 @@ async def send_postmark_form_submission_email(
                     form_config['to_email'][0]}"
             )
 
-        # Create message with Poshmark-specific formatting
+        # Create message with Postmark-specific formatting
         msg = MIMEMultipart()
         msg["From"] = (
-            # Use the form's to_email as the From address
             f"{form_config['from_name']} <{form_config['to_email'][0]}>"
         )
-        # Use first email from to_email list
         msg["To"] = form_config["to_email"][0]
-        
-        # Postmark-specific subject formatting
         postmark_subject = f"Postmark Inquiry: {submission.subject}"
         msg["Subject"] = postmark_subject
-
-        # Postmark-specific body formatting
         postmark_body = f"""
         <html>
         <body>
@@ -368,27 +362,21 @@ async def send_postmark_form_submission_email(
         """
         msg.attach(MIMEText(postmark_body, "html"))
 
-        # Send email using Postmark API
-        postmark_api_key = os.getenv("POSTMARK_API_KEY")
-        postmark_sender_email = os.getenv("POSTMARK_SENDER_EMAIL")
+        # Use per-form Postmark credentials if present, else fallback to env
+        postmark_api_key = form_config.get("postmark", {}).get("api_key") or os.getenv("POSTMARK_API_KEY")
+        postmark_sender_email = form_config.get("postmark", {}).get("sender_email") or os.getenv("POSTMARK_SENDER_EMAIL")
 
         if not postmark_api_key or not postmark_sender_email:
             raise ValueError("Missing Postmark API key or sender email")
 
-        # Import postmarker here to avoid import issues
         from postmarker.core import PostmarkClient
-        
-        # Create Postmark client
         postmark = PostmarkClient(server_token=postmark_api_key)
-        
-        # Send email via Postmark
         response = postmark.emails.send(
             From=postmark_sender_email,
             To=form_config["to_email"][0],
             Subject=postmark_subject,
             HtmlBody=postmark_body
         )
-        
         logger.info("📨 Postmark email sent successfully via API")
         logger.info(f"📧 Postmark Message ID: {response.get('MessageID')}")
 

@@ -62,10 +62,12 @@ ICLOUD_PASSWORD=your_app_specific_password
 
 For Postmark mode:
 ```bash
-# Postmark settings (set in .env)
+# Postmark settings (set in .env) - used as fallback if not specified per-form
 POSTMARK_API_KEY=your_postmark_api_key
 POSTMARK_SENDER_EMAIL=your_verified_sender@yourdomain.com
 ```
+
+**Note:** You can also specify Postmark credentials per-form in `config.yml` (see example above). If a form has its own `postmark` section, it will use those credentials instead of the environment variables.
 
 For both modes:
 ```bash
@@ -99,6 +101,17 @@ forms:
     allowed_domains: ["https://example.com"]
     from_name: "Your Name"
     rate_limit: 5  # requests per minute
+
+  # Optional: Add postmark section for per-form Postmark credentials
+  # Only needed when using postmark mode and you want different API keys per form
+  postmark_form:
+    key: "postmark-form-key"
+    to_email: ["hello@yourdomain.com"]
+    allowed_domains: ["https://yourdomain.com"]
+    from_name: "Your Name"
+    postmark:
+      api_key: "your-postmark-api-key-for-this-form"
+      sender_email: "hello@yourdomain.com"
 ```
 
 2. **responses.json** - Email templates and responses:
@@ -244,6 +257,7 @@ When in Postmark mode, the following changes occur:
 - **Notifications**: Pushover notifications indicate Postmark mode
 - **Email Processing**: The system looks for Postmark-specific subject patterns
 - **Email Delivery**: Uses Postmark API instead of iCloud SMTP
+- **Per-Form Credentials**: Supports different Postmark API keys per form (optional)
 
 ### Website Integration
 
