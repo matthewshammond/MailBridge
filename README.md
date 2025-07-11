@@ -214,7 +214,7 @@ MailBridge supports multiple integration modes that can be easily switched using
    - Subject lines prefixed with "Postmark Inquiry:"
    - Styled auto-replies with Postmark branding
    - Enhanced Pushover notifications
-   - Uses Postmark API for email delivery
+   - **Hybrid approach**: Form submissions use Postmark API, auto-replies use iCloud SMTP
 
 #### Switching Modes
 
@@ -256,7 +256,7 @@ When in Postmark mode, the following changes occur:
 - **Auto-Replies**: Responses include Postmark branding and styled formatting
 - **Notifications**: Pushover notifications indicate Postmark mode
 - **Email Processing**: The system looks for Postmark-specific subject patterns
-- **Email Delivery**: Uses Postmark API instead of iCloud SMTP
+- **Email Delivery**: Form submissions use Postmark API, auto-replies use iCloud SMTP
 - **Per-Form Credentials**: Supports different Postmark API keys per form (optional)
 
 ### Website Integration

@@ -312,7 +312,7 @@ def process_new_emails():
 
             print(f"📋 Checking against available responses for {matching_alias}: {list(RESPONSE_CONFIG[matching_alias]['subjects'].keys())}", flush=True)
 
-            # Handle different modes for subject matching
+            # Handle subject matching for both modes
             matching_subject = None
             if global_mode == "postmark":
                 # For Postmark mode, look for Postmark-specific subject patterns
@@ -366,25 +366,16 @@ def process_new_emails():
                     f"Message received at {header_to}\nFrom: {fields['name']} <{fields['email']}>\nSubject: {fields['subject']}\n---\n{body}"
                 )
                 
-                # Handle different reply logic based on mode
-                if global_mode == "postmark":
-                    success = send_postmark_reply(
-                        fields["email"],
-                        fields["subject"],
-                        fields["name"],
-                        RESPONSE_CONFIG[matching_alias]['subjects'][matching_subject],
-                        RESPONSE_CONFIG[matching_alias]['signature'],
-                        matching_alias
-                    )
-                else:
-                    success = send_reply(
-                        fields["email"],
-                        fields["subject"],
-                        fields["name"],
-                        RESPONSE_CONFIG[matching_alias]['subjects'][matching_subject],
-                        RESPONSE_CONFIG[matching_alias]['signature'],
-                        matching_alias
-                    )
+                # Always use iCloud for auto-replies (hybrid approach)
+                # Form submissions use Postmark API, but auto-replies use iCloud SMTP
+                success = send_reply(
+                    fields["email"],
+                    fields["subject"],
+                    fields["name"],
+                    RESPONSE_CONFIG[matching_alias]['subjects'][matching_subject],
+                    RESPONSE_CONFIG[matching_alias]['signature'],
+                    matching_alias
+                )
                 
                 if success:
                     print(f"✅ Successfully processed email, marking as read", flush=True)
