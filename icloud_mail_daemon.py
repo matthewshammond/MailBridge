@@ -65,10 +65,17 @@ def send_pushover_notification(title, message):
 
 def extract_fields(body):
     print(f"📧 Raw email body:\n{body}", flush=True)
-    # Updated regex to match the HTML format we're sending
+    
+    # Try to extract from iCloud HTML format first
     name_match = re.search(r"<b>Name:</b>\s*(.+?)</p>", body)
     email_match = re.search(r"<b>Email:</b>\s*(.+?)</p>", body)
     subject_match = re.search(r"<b>Subject:</b>\s*(.+?)</p>", body)
+    
+    # If HTML format didn't work, try Postmark plain text format
+    if not name_match or not email_match or not subject_match:
+        name_match = re.search(r"Customer Name:\s*(.+?)(?:\n|$)", body)
+        email_match = re.search(r"Customer Email:\s*(.+?)(?:\n|$)", body)
+        subject_match = re.search(r"Inquiry Subject:\s*(.+?)(?:\n|$)", body)
     
     if not name_match or not email_match or not subject_match:
         print("⚠️  Failed to extract fields from email body", flush=True)
