@@ -342,9 +342,9 @@ async def send_postmark_form_submission_email(
             f"{form_config['from_name']} <{form_config['to_email'][0]}>"
         )
         msg["To"] = form_config["to_email"][0]
-        # Use the same subject format as iCloud for compatibility with auto-replies
-        # This ensures the daemon can match subjects properly regardless of mode
-        msg["Subject"] = submission.subject
+        # Format the subject using the email configuration template (same as iCloud mode)
+        formatted_subject = email_config["form_submission_template"]["subject"] % submission.subject
+        msg["Subject"] = formatted_subject
         postmark_body = f"""
         <html>
         <body>
@@ -375,7 +375,7 @@ async def send_postmark_form_submission_email(
         response = postmark.emails.send(
             From=postmark_sender_email,
             To=form_config["to_email"][0],
-            Subject=submission.subject,
+            Subject=formatted_subject,
             HtmlBody=postmark_body
         )
         logger.info("📨 Postmark email sent successfully via API")
