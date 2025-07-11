@@ -172,7 +172,6 @@ def send_reply(to_email, subject_line_from_body, name, response_body, signature,
 
 def send_postmark_reply(to_email, subject_line_from_body, name, response_body, signature, from_email):
     print(f"📤 Attempting to send Postmark reply to {to_email}", flush=True)
-    msg = EmailMessage()
     
     # Get form configuration for this email
     form_config = None
@@ -182,50 +181,20 @@ def send_postmark_reply(to_email, subject_line_from_body, name, response_body, s
             break
     
     # Set From header with name if found, otherwise just email
+    from_header = from_email
     if form_config:
-        msg["From"] = f"{form_config['from_name']} <{from_email}>"
-    else:
-        msg["From"] = from_email
-        
-    msg["To"] = to_email
-    msg["Subject"] = f"Re: {subject_line_from_body}"
-
+        from_header = f"{form_config['from_name']} <{from_email}>"
+    
     # Extract first name for the greeting
     first_name = name.split()[0]
     
-    # Postmark-specific HTML body with styling
-    html_body = f"""
-    <html>
-    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-        <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-            <div style="background-color: #ff6b6b; color: white; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
-                <h2 style="margin: 0;">Postmark Response</h2>
-            </div>
-            
-            <p>Hi {first_name},</p>
-            
-            <div style="background-color: #f9f9f9; padding: 15px; border-left: 4px solid #ff6b6b; margin: 15px 0;">
-                {response_body}
-            </div>
-            
-            <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee;">
-                {signature}
-            </div>
-            
-            <div style="margin-top: 20px; font-size: 12px; color: #666; text-align: center;">
-                <p>This is an automated response from your Postmark integration.</p>
-            </div>
-        </div>
-    </body>
-    </html>
-    """
+    # Use the exact same HTML body as iCloud method
+    html_body = f"<p>{first_name},</p><p>{response_body}</p>{signature}"
     
     try:
-        # Use per-form Postmark credentials if present, else fallback to env
-        postmark_api_key = form_config.get("postmark", {}).get("api_key") if form_config else None
-        postmark_sender_email = form_config.get("postmark", {}).get("sender_email") if form_config else None
-        postmark_api_key = postmark_api_key or os.getenv("POSTMARK_API_KEY")
-        postmark_sender_email = postmark_sender_email or os.getenv("POSTMARK_SENDER_EMAIL")
+        # Get Postmark credentials from environment
+        postmark_api_key = os.getenv("POSTMARK_API_KEY")
+        postmark_sender_email = os.getenv("POSTMARK_SENDER_EMAIL")
 
         if not postmark_api_key or not postmark_sender_email:
             print("❌ Missing Postmark API key or sender email", flush=True)
@@ -234,7 +203,7 @@ def send_postmark_reply(to_email, subject_line_from_body, name, response_body, s
         from postmarker.core import PostmarkClient
         postmark = PostmarkClient(server_token=postmark_api_key)
         response = postmark.emails.send(
-            From=postmark_sender_email,
+            From=from_header,
             To=to_email,
             Subject=f"Re: {subject_line_from_body}",
             HtmlBody=html_body
@@ -259,7 +228,8 @@ def send_postmark_reply(to_email, subject_line_from_body, name, response_body, s
 def process_new_emails():
     try:
         # Check global mode configuration
-        global_mode = CONFIG.get("global", {}).get("mode", "current")
+        global_mode = CONFIG.get("global", {}).get("mode", "iCloud")
+        print(f"🎯 Current mode: {global_mode}", flush=True)
         
         # Get the instance emails from environment
         instance_emails = os.getenv("INSTANCE_EMAILS", "").split(",")
@@ -361,16 +331,27 @@ def process_new_emails():
                     f"Message received at {header_to}\nFrom: {fields['name']} <{fields['email']}>\nSubject: {fields['subject']}\n---\n{body}"
                 )
                 
-                # Always use iCloud for auto-replies (hybrid approach)
-                # Form submissions use Postmark API, but auto-replies use iCloud SMTP
-                success = send_reply(
-                    fields["email"],
-                    fields["subject"],
-                    fields["name"],
-                    RESPONSE_CONFIG[matching_alias]['subjects'][matching_subject],
-                    RESPONSE_CONFIG[matching_alias]['signature'],
-                    matching_alias
-                )
+                # Choose sending method based on global mode
+                print(f"📤 Using {global_mode} to send reply", flush=True)
+                if global_mode == "postmark":
+                    success = send_postmark_reply(
+                        fields["email"],
+                        fields["subject"],
+                        fields["name"],
+                        RESPONSE_CONFIG[matching_alias]['subjects'][matching_subject],
+                        RESPONSE_CONFIG[matching_alias]['signature'],
+                        matching_alias
+                    )
+                else:
+                    # Default to iCloud for auto-replies
+                    success = send_reply(
+                        fields["email"],
+                        fields["subject"],
+                        fields["name"],
+                        RESPONSE_CONFIG[matching_alias]['subjects'][matching_subject],
+                        RESPONSE_CONFIG[matching_alias]['signature'],
+                        matching_alias
+                    )
                 
                 if success:
                     print(f"✅ Successfully processed email, marking as read", flush=True)
