@@ -177,12 +177,12 @@ class FormSubmission(BaseModel):
         content_clean = re.sub(r'[^a-zA-Z]', '', self.content.lower())
         
         if len(name_clean) > 3:
-            consonants = len(re.sub(r'[aeiou]', '', content_clean))
-            vowels = len(re.sub(r'[^aeiou]', '', content_clean))
+            consonants = len(re.sub(r'[aeiou]', '', name_clean))
+            vowels = len(re.sub(r'[^aeiou]', '', name_clean))
             if consonants > 0 and vowels > 0:
                 consonant_ratio = consonants / (consonants + vowels)
-                # Lower threshold to catch more keyboard smashing (70% instead of 80%)
-                if consonant_ratio > 0.7:
+                # If more than 75% consonants, likely keyboard smashing
+                if consonant_ratio > 0.75:
                     return True
         
         # Check for repeated character patterns
@@ -197,7 +197,7 @@ class FormSubmission(BaseModel):
             vowels = len(re.sub(r'[^aeiou]', '', content_clean))
             if consonants > 0 and vowels > 0:
                 consonant_ratio = consonants / (consonants + vowels)
-                if consonant_ratio > 0.7:
+                if consonant_ratio > 0.75:
                     return True
             
             # Look for repeated character patterns in content
@@ -205,19 +205,26 @@ class FormSubmission(BaseModel):
                 return True
         
         # Additional patterns for keyboard smashing
-        # Check for very short names with mostly consonants
+        # Check for very short names with mostly consonants (but not common names)
         if len(name_clean) >= 3 and len(name_clean) <= 8:
             consonants = len(re.sub(r'[aeiou]', '', name_clean))
             vowels = len(re.sub(r'[^aeiou]', '', name_clean))
-            if consonants >= 4 and vowels <= 2:  # At least 4 consonants, max 2 vowels
+            # More restrictive: need high consonant ratio AND few vowels
+            if consonants >= 4 and vowels <= 2 and consonants / (consonants + vowels) > 0.6:
                 return True
         
         # Check for content with similar patterns
         if len(content_clean) >= 4 and len(content_clean) <= 15:
             consonants = len(re.sub(r'[aeiou]', '', content_clean))
             vowels = len(re.sub(r'[^aeiou]', '', content_clean))
-            if consonants >= 5 and vowels <= 3:  # At least 5 consonants, max 3 vowels
+            # More restrictive: need high consonant ratio AND few vowels
+            if consonants >= 5 and vowels <= 3 and consonants / (consonants + vowels) > 0.6:
                 return True
+        
+        # Check for obvious keyboard patterns (like "asdf", "qwer", "zxcv")
+        keyboard_patterns = ['asdf', 'qwer', 'zxcv', 'hjkl', 'fdsa', 'rewq', 'vcxz', 'lkjh']
+        if name_clean in keyboard_patterns or content_clean in keyboard_patterns:
+            return True
         
         return False
 
