@@ -177,12 +177,12 @@ class FormSubmission(BaseModel):
         content_clean = re.sub(r'[^a-zA-Z]', '', self.content.lower())
         
         if len(name_clean) > 3:
-            consonants = len(re.sub(r'[aeiou]', '', name_clean))
-            vowels = len(re.sub(r'[^aeiou]', '', name_clean))
+            consonants = len(re.sub(r'[aeiou]', '', content_clean))
+            vowels = len(re.sub(r'[^aeiou]', '', content_clean))
             if consonants > 0 and vowels > 0:
                 consonant_ratio = consonants / (consonants + vowels)
-                # If more than 80% consonants, likely keyboard smashing
-                if consonant_ratio > 0.8:
+                # Lower threshold to catch more keyboard smashing (70% instead of 80%)
+                if consonant_ratio > 0.7:
                     return True
         
         # Check for repeated character patterns
@@ -197,11 +197,26 @@ class FormSubmission(BaseModel):
             vowels = len(re.sub(r'[^aeiou]', '', content_clean))
             if consonants > 0 and vowels > 0:
                 consonant_ratio = consonants / (consonants + vowels)
-                if consonant_ratio > 0.8:
+                if consonant_ratio > 0.7:
                     return True
             
             # Look for repeated character patterns in content
             if re.search(r'(.)\1{2,}', content_clean):
+                return True
+        
+        # Additional patterns for keyboard smashing
+        # Check for very short names with mostly consonants
+        if len(name_clean) >= 3 and len(name_clean) <= 8:
+            consonants = len(re.sub(r'[aeiou]', '', name_clean))
+            vowels = len(re.sub(r'[^aeiou]', '', name_clean))
+            if consonants >= 4 and vowels <= 2:  # At least 4 consonants, max 2 vowels
+                return True
+        
+        # Check for content with similar patterns
+        if len(content_clean) >= 4 and len(content_clean) <= 15:
+            consonants = len(re.sub(r'[aeiou]', '', content_clean))
+            vowels = len(re.sub(r'[^aeiou]', '', content_clean))
+            if consonants >= 5 and vowels <= 3:  # At least 5 consonants, max 3 vowels
                 return True
         
         return False
@@ -260,20 +275,34 @@ async def submit_form(
         website=form_data.get("website"),  # Honeypot field
     )
 
-    # Log the submission attempt with IP address
-    ip = request.client.host
-    logger.info(f"Form submission attempt from IP {ip}: {submission.name} <{submission.email}> - {submission.subject}")
+    # Get the real IP address (handle reverse proxies)
+    def get_real_ip(request: Request) -> str:
+        # Check for forwarded headers first
+        forwarded_for = request.headers.get("X-Forwarded-For")
+        if forwarded_for:
+            # X-Forwarded-For can contain multiple IPs, take the first one
+            return forwarded_for.split(",")[0].strip()
+        
+        real_ip = request.headers.get("X-Real-IP")
+        if real_ip:
+            return real_ip.strip()
+        
+        # Fallback to direct client IP
+        return request.client.host
+
+    # Log the submission attempt with real IP address
+    real_ip = get_real_ip(request)
+    logger.info(f"Form submission attempt from IP {real_ip}: {submission.name} <{submission.email}> - {submission.subject}")
 
     # Validate the submission (includes honeypot and spam checks)
     try:
         submission.validate()
     except ValueError as e:
-        logger.warning(f"Form validation failed from IP {ip}: {str(e)}")
+        logger.warning(f"Form validation failed from IP {real_ip}: {str(e)}")
         raise HTTPException(status_code=400, detail="Invalid form submission")
 
-    # Check rate limit
-    ip = request.client.host
-    key = f"rate_limit:{ip}:{form_key}"
+    # Check rate limit (use real IP for consistency)
+    key = f"rate_limit:{real_ip}:{form_key}"
     current = await redis_client.get(key)
     if current and int(current) >= 5:  # 5 requests per minute
         raise HTTPException(status_code=429, detail="Too many requests")
