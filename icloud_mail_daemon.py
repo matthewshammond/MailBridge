@@ -355,7 +355,7 @@ def process_new_emails():
                 
                 if success:
                     print(f"✅ Successfully processed email, marking as read", flush=True)
-                    mail.store(num, '+FLAGS', '\Seen')
+                    mail.store(num, '+FLAGS', '\\Seen')
                 else:
                     print(f"❌ Failed to send reply, leaving email unread", flush=True)
             else:

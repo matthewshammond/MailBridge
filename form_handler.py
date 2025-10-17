@@ -69,13 +69,26 @@ def get_form_config(form_key: str):
     return None
 
 
+def expand_env_vars(obj):
+    """Recursively expand environment variables in config objects"""
+    if isinstance(obj, dict):
+        return {k: expand_env_vars(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [expand_env_vars(item) for item in obj]
+    elif isinstance(obj, str) and obj.startswith('${') and obj.endswith('}'):
+        env_var = obj[2:-1]
+        return os.getenv(env_var, obj)
+    else:
+        return obj
+
 # Load configuration
 config_path = Path("/config/config.yml")
 if not config_path.exists():
     config_path = Path("config/config.yml")
 
 with open(config_path, "r") as f:
-    config = yaml.safe_load(f)
+    config_raw = yaml.safe_load(f)
+    config = expand_env_vars(config_raw)
 
 # Load responses
 responses_path = Path("/config/responses.json")
@@ -247,11 +260,15 @@ async def submit_form(
         website=form_data.get("website"),  # Honeypot field
     )
 
+    # Log the submission attempt with IP address
+    ip = request.client.host
+    logger.info(f"Form submission attempt from IP {ip}: {submission.name} <{submission.email}> - {submission.subject}")
+
     # Validate the submission (includes honeypot and spam checks)
     try:
         submission.validate()
     except ValueError as e:
-        logger.warning(f"Form validation failed: {str(e)}")
+        logger.warning(f"Form validation failed from IP {ip}: {str(e)}")
         raise HTTPException(status_code=400, detail="Invalid form submission")
 
     # Check rate limit
