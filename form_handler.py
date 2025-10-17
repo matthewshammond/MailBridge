@@ -181,8 +181,8 @@ class FormSubmission(BaseModel):
             vowels = len(re.sub(r'[^aeiou]', '', name_clean))
             if consonants > 0 and vowels > 0:
                 consonant_ratio = consonants / (consonants + vowels)
-                # If more than 75% consonants, likely keyboard smashing
-                if consonant_ratio > 0.75:
+                # If more than 80% consonants, likely keyboard smashing
+                if consonant_ratio > 0.8:
                     return True
         
         # Check for repeated character patterns
@@ -197,7 +197,7 @@ class FormSubmission(BaseModel):
             vowels = len(re.sub(r'[^aeiou]', '', content_clean))
             if consonants > 0 and vowels > 0:
                 consonant_ratio = consonants / (consonants + vowels)
-                if consonant_ratio > 0.75:
+                if consonant_ratio > 0.8:
                     return True
             
             # Look for repeated character patterns in content
