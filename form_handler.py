@@ -168,8 +168,10 @@ class FormSubmission(BaseModel):
             raise ValueError("Spam detected")
 
     def _is_spam(self) -> bool:
-        """Detect obvious spam patterns like keyboard smashing"""
+        """Detect obvious spam patterns like keyboard smashing and random string generation"""
         import re
+        import math
+        from collections import Counter
         
         # Check for random character patterns (keyboard smashing)
         # Look for strings with high ratio of consonants to vowels
@@ -226,7 +228,298 @@ class FormSubmission(BaseModel):
         if name_clean in keyboard_patterns or content_clean in keyboard_patterns:
             return True
         
+        # ENHANCED DETECTION FOR SOPHISTICATED ATTACKS
+        
+        # 1. Entropy-based detection for random string generation
+        if self._is_high_entropy_random(name_clean) or self._is_high_entropy_random(content_clean):
+            return True
+        
+        # 2. Mixed case pattern detection (random generators often use mixed case)
+        if self._has_suspicious_case_pattern(self.name) or self._has_suspicious_case_pattern(self.content):
+            return True
+        
+        # 3. Character distribution analysis
+        if self._has_unusual_character_distribution(name_clean) or self._has_unusual_character_distribution(content_clean):
+            return True
+        
+        # 4. Length-based random string detection
+        if self._is_random_length_pattern(name_clean) or self._is_random_length_pattern(content_clean):
+            return True
+        
         return False
+    
+    def _calculate_entropy(self, text: str) -> float:
+        """Calculate Shannon entropy of a string"""
+        from collections import Counter
+        import math
+        
+        if not text or len(text) < 2:
+            return 0
+        
+        counts = Counter(text.lower())
+        entropy = 0
+        for count in counts.values():
+            p = count / len(text)
+            entropy -= p * math.log2(p)
+        
+        return entropy
+    
+    def _is_high_entropy_random(self, text: str) -> bool:
+        """Detect high-entropy strings that look randomly generated"""
+        if len(text) < 6:
+            return False
+        
+        # For longer text, check if it contains common English words
+        # If it does, it's likely legitimate content, not random
+        if len(text) > 15:
+            common_words = ['the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'up', 'about', 'into', 'through', 'during', 'before', 'after', 'above', 'below', 'between', 'among', 'would', 'like', 'request', 'access', 'platform', 'please', 'thank', 'you', 'your', 'help', 'need', 'want', 'get', 'can', 'will', 'should', 'could', 'may', 'might', 'must', 'have', 'has', 'had', 'do', 'does', 'did', 'be', 'am', 'is', 'are', 'was', 'were', 'been', 'being']
+            text_lower = text.lower()
+            word_count = sum(1 for word in common_words if word in text_lower)
+            # If it contains 3+ common words, it's likely legitimate
+            if word_count >= 3:
+                return False
+        
+        entropy = self._calculate_entropy(text)
+        # Random strings typically have entropy > 3.5
+        # But we need to be careful not to block legitimate names
+        if entropy > 3.8 and len(text) >= 8:
+            return True
+        
+        # Additional check: very high entropy with mixed case
+        if entropy > 3.6 and any(c.isupper() for c in text) and any(c.islower() for c in text):
+            return True
+        
+        return False
+    
+    def _has_suspicious_case_pattern(self, text: str) -> bool:
+        """Detect suspicious mixed case patterns typical of random generators"""
+        if len(text) < 8:
+            return False
+        
+        # Count case transitions
+        case_transitions = 0
+        for i in range(len(text) - 1):
+            if text[i].isupper() != text[i+1].isupper():
+                case_transitions += 1
+        
+        # If more than 60% of transitions are case changes, likely random
+        transition_ratio = case_transitions / (len(text) - 1)
+        if transition_ratio > 0.6:
+            return True
+        
+        # Check for alternating case patterns (very suspicious)
+        alternating_count = 0
+        for i in range(len(text) - 2):
+            if (text[i].isupper() != text[i+1].isupper() and 
+                text[i+1].isupper() != text[i+2].isupper()):
+                alternating_count += 1
+        
+        # If more than 40% alternating patterns, likely random
+        if len(text) > 2 and alternating_count / (len(text) - 2) > 0.4:
+            return True
+        
+        return False
+    
+    def _has_unusual_character_distribution(self, text: str) -> bool:
+        """Detect unusual character distributions typical of random generation"""
+        import re
+        
+        if len(text) < 6:
+            return False
+        
+        # Check for very unusual consonant clusters (6+ consonants in a row)
+        consonant_clusters = re.findall(r'[bcdfghjklmnpqrstvwxyz]{6,}', text.lower())
+        if len(consonant_clusters) > 0:
+            return True
+        
+        # Check for unusual vowel patterns (5+ vowels in a row)
+        vowel_patterns = re.findall(r'[aeiou]{5,}', text.lower())
+        if len(vowel_patterns) > 0:
+            return True
+        
+        # Check for unusual character frequency (too many rare letters)
+        rare_letters = 'qxzjk'
+        rare_count = sum(1 for c in text.lower() if c in rare_letters)
+        if rare_count > len(text) * 0.4:  # More than 40% rare letters
+            return True
+        
+        # Check for very unusual patterns that are clearly random
+        # Look for patterns like "bcdfgh" or "qwerty" type sequences
+        unusual_patterns = [
+            r'[bcdfghjklmnpqrstvwxyz]{5,}',  # 5+ consonants
+            r'[aeiou]{4,}',  # 4+ vowels
+            r'qwerty',  # Exact QWERTY sequence
+            r'asdfgh',  # Exact ASDF sequence
+            r'zxcvbn',  # Exact ZXCV sequence
+            r'qwer',  # QWER sequence
+            r'asdf',  # ASDF sequence
+            r'zxcv',  # ZXCV sequence
+        ]
+        
+        for pattern in unusual_patterns:
+            if re.search(pattern, text.lower()):
+                return True
+        
+        return False
+    
+    def _is_random_length_pattern(self, text: str) -> bool:
+        """Detect patterns typical of random string generators"""
+        from collections import Counter
+        import math
+        
+        if len(text) < 6:
+            return False
+        
+        # Random generators often create strings of specific lengths
+        # Check for lengths that are powers of 2 or common random lengths
+        suspicious_lengths = [8, 10, 12, 14, 16, 20, 24, 32]
+        if len(text) in suspicious_lengths:
+            # Additional check: if it's a suspicious length AND has high entropy
+            entropy = self._calculate_entropy(text)
+            if entropy > 3.2:
+                return True
+        
+        return False
+
+
+async def _is_suspicious_behavior(redis_client: redis.Redis, ip: str, submission: FormSubmission) -> bool:
+    """Detect suspicious behavioral patterns across submissions"""
+    import json
+    import time
+    
+    # Track submission patterns for this IP
+    pattern_key = f"behavior:{ip}"
+    
+    # Get existing pattern data
+    existing_data = await redis_client.get(pattern_key)
+    if existing_data:
+        pattern_data = json.loads(existing_data)
+    else:
+        pattern_data = {
+            "submissions": [],
+            "random_names": 0,
+            "random_content": 0,
+            "email_domains": set(),
+            "first_seen": time.time()
+        }
+    
+    # Analyze current submission
+    is_random_name = _is_random_looking_string(submission.name)
+    is_random_content = _is_random_looking_string(submission.content)
+    
+    # Count random patterns
+    if is_random_name:
+        pattern_data["random_names"] += 1
+    if is_random_content:
+        pattern_data["random_content"] += 1
+    
+    # Track email domains
+    email_domain = submission.email.split('@')[1] if '@' in submission.email else ''
+    pattern_data["email_domains"].add(email_domain)
+    
+    # Add current submission to history
+    pattern_data["submissions"].append({
+        "timestamp": time.time(),
+        "name": submission.name,
+        "email": submission.email,
+        "content": submission.content,
+        "is_random_name": is_random_name,
+        "is_random_content": is_random_content
+    })
+    
+    # Keep only last 10 submissions
+    if len(pattern_data["submissions"]) > 10:
+        pattern_data["submissions"] = pattern_data["submissions"][-10:]
+    
+    # Convert set to list for JSON serialization
+    pattern_data["email_domains"] = list(pattern_data["email_domains"])
+    
+    # Save updated pattern data
+    await redis_client.setex(pattern_key, 86400, json.dumps(pattern_data))  # 24 hour expiry
+    
+    # Analyze patterns for suspicious behavior
+    total_submissions = len(pattern_data["submissions"])
+    
+    # Suspicious if:
+    # 1. Multiple submissions with random-looking names/content
+    # 2. Using multiple different email domains (email rotation)
+    # 3. Consistent pattern of random strings
+    
+    if total_submissions >= 2:
+        random_name_ratio = pattern_data["random_names"] / total_submissions
+        random_content_ratio = pattern_data["random_content"] / total_submissions
+        unique_domains = len(pattern_data["email_domains"])
+        
+        # High ratio of random names/content + multiple domains = suspicious
+        if (random_name_ratio >= 0.8 and random_content_ratio >= 0.8 and 
+            unique_domains >= 2):
+            return True
+        
+        # Very high random content ratio (90%+) is suspicious regardless
+        if random_content_ratio >= 0.9:
+            return True
+    
+    return False
+
+
+def _is_random_looking_string(text: str) -> bool:
+    """Quick check if a string looks randomly generated"""
+    import re
+    import math
+    from collections import Counter
+    
+    if len(text) < 6:
+        return False
+    
+    # For longer text, check if it contains common English words
+    if len(text) > 15:
+        common_words = ['the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'up', 'about', 'into', 'through', 'during', 'before', 'after', 'above', 'below', 'between', 'among', 'would', 'like', 'request', 'access', 'platform', 'please', 'thank', 'you', 'your', 'help', 'need', 'want', 'get', 'can', 'will', 'should', 'could', 'may', 'might', 'must', 'have', 'has', 'had', 'do', 'does', 'did', 'be', 'am', 'is', 'are', 'was', 'were', 'been', 'being']
+        text_lower = text.lower()
+        word_count = sum(1 for word in common_words if word in text_lower)
+        # If it contains 3+ common words, it's likely legitimate
+        if word_count >= 3:
+            return False
+    
+    # Clean the text
+    clean_text = re.sub(r'[^a-zA-Z]', '', text.lower())
+    
+    # Check entropy
+    if len(clean_text) >= 6:
+        counts = Counter(clean_text)
+        entropy = 0
+        for count in counts.values():
+            p = count / len(clean_text)
+            entropy -= p * math.log2(p)
+        
+        # High entropy suggests randomness
+        if entropy > 3.5:
+            return True
+    
+    # Check for unusual character patterns
+    consonant_clusters = re.findall(r'[bcdfghjklmnpqrstvwxyz]{6,}', clean_text)
+    if len(consonant_clusters) > 0:
+        return True
+    
+    # Check for unusual vowel patterns
+    vowel_patterns = re.findall(r'[aeiou]{5,}', clean_text)
+    if len(vowel_patterns) > 0:
+        return True
+    
+    # Check for keyboard patterns
+    keyboard_patterns = [
+        r'qwerty',  # Exact QWERTY sequence
+        r'asdfgh',  # Exact ASDF sequence
+        r'zxcvbn',  # Exact ZXCV sequence
+        r'qwer',  # QWER sequence
+        r'asdf',  # ASDF sequence
+        r'zxcv',  # ZXCV sequence
+    ]
+    
+    for pattern in keyboard_patterns:
+        if re.search(pattern, clean_text):
+            return True
+    
+    return False
 
 
 async def verify_recaptcha_v3(token: str, secret_key: str) -> bool:
@@ -307,6 +600,11 @@ async def submit_form(
     except ValueError as e:
         logger.warning(f"Form validation failed from IP {real_ip}: {str(e)}")
         raise HTTPException(status_code=400, detail="Invalid form submission")
+    
+    # Additional behavioral analysis for sophisticated attackers
+    if await _is_suspicious_behavior(redis_client, real_ip, submission):
+        logger.warning(f"Suspicious behavior detected from IP {real_ip}: {submission.name} <{submission.email}>")
+        raise HTTPException(status_code=400, detail="Suspicious submission pattern detected")
 
     # Check rate limit (use real IP for consistency)
     key = f"rate_limit:{real_ip}:{form_key}"
