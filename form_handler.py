@@ -133,6 +133,7 @@ class FormSubmission(BaseModel):
     subject: str
     content: str
     captcha_token: Optional[str] = None
+    website: Optional[str] = None  # Honeypot field
 
     def validate(self):
         # Basic input validation
@@ -144,6 +145,53 @@ class FormSubmission(BaseModel):
             raise ValueError("Invalid subject")
         if not self.content.strip() or len(self.content) > 10000:
             raise ValueError("Invalid content")
+        
+        # Honeypot validation - if filled, it's likely a bot
+        if self.website and self.website.strip():
+            raise ValueError("Bot detected")
+        
+        # Basic spam detection for obvious keyboard smashing
+        if self._is_spam():
+            raise ValueError("Spam detected")
+
+    def _is_spam(self) -> bool:
+        """Detect obvious spam patterns like keyboard smashing"""
+        import re
+        
+        # Check for random character patterns (keyboard smashing)
+        # Look for strings with high ratio of consonants to vowels
+        name_clean = re.sub(r'[^a-zA-Z]', '', self.name.lower())
+        content_clean = re.sub(r'[^a-zA-Z]', '', self.content.lower())
+        
+        if len(name_clean) > 3:
+            consonants = len(re.sub(r'[aeiou]', '', name_clean))
+            vowels = len(re.sub(r'[^aeiou]', '', name_clean))
+            if consonants > 0 and vowels > 0:
+                consonant_ratio = consonants / (consonants + vowels)
+                # If more than 80% consonants, likely keyboard smashing
+                if consonant_ratio > 0.8:
+                    return True
+        
+        # Check for repeated character patterns
+        if len(name_clean) > 5:
+            # Look for 3+ consecutive same characters
+            if re.search(r'(.)\1{2,}', name_clean):
+                return True
+        
+        # Check content for similar patterns
+        if len(content_clean) > 5:
+            consonants = len(re.sub(r'[aeiou]', '', content_clean))
+            vowels = len(re.sub(r'[^aeiou]', '', content_clean))
+            if consonants > 0 and vowels > 0:
+                consonant_ratio = consonants / (consonants + vowels)
+                if consonant_ratio > 0.8:
+                    return True
+            
+            # Look for repeated character patterns in content
+            if re.search(r'(.)\1{2,}', content_clean):
+                return True
+        
+        return False
 
 
 async def verify_recaptcha_v3(token: str, secret_key: str) -> bool:
@@ -196,7 +244,15 @@ async def submit_form(
         subject=form_data.get("subject"),
         content=form_data.get("content"),
         captcha_token=form_data.get("captcha_token"),
+        website=form_data.get("website"),  # Honeypot field
     )
+
+    # Validate the submission (includes honeypot and spam checks)
+    try:
+        submission.validate()
+    except ValueError as e:
+        logger.warning(f"Form validation failed: {str(e)}")
+        raise HTTPException(status_code=400, detail="Invalid form submission")
 
     # Check rate limit
     ip = request.client.host
